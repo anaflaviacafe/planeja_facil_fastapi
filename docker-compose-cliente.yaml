@@ -1,0 +1,23 @@
+services:
+  app:
+    image: planeja_facil_fastapi-app:latest
+    container_name: planeja_facil_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./secrets:/secrets:ro 
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+
+  users_service:
+    image: planeja_facil_fastapi-users_service:latest
+    container_name: planeja_facil_users
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    volumes:
+      - ./secrets:/secrets:ro    # Mount the secrets folder to the credentials file
+      - ./shared:/app/shared:ro  # Mount the shared folder, if config.py or other files are needed
+    command: uvicorn main:app --host 0.0.0.0 --port 8001

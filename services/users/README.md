@@ -1,0 +1,175 @@
+# Firebase Console
+
+## Rules
+
+No projeto planeja-facil, no menu à esquerda, clique em Firestore Database. Clique na aba Rules (Regras)
+Tera um editor de texto com regras padrão, substitua o codigo pela regra:
+
+```
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{mainUserId} {
+      allow read, write: if request.auth != null && 
+        (request.auth.uid == mainUserId || 
+         (request.auth.token.role == 'main' && request.auth.token.mainUserId == mainUserId));
+      
+      match /child_users/{childId} {
+        allow read: if request.auth != null && 
+          (request.auth.uid == childId || 
+           (request.auth.token.role == 'main' && request.auth.token.mainUserId == mainUserId));
+        allow create: if request.auth != null && 
+          request.auth.token.role == 'main' && request.auth.token.mainUserId == mainUserId;
+        allow update, delete: if false;
+      }
+    }
+  }
+}
+```
+## Autentication
+
+Para criar usuários com e-mail e senha (como no endpoint /register-main), o provedor de autenticação de e-mail/senha deve estar habilitado. No firebase ir em autenticação método de login e abiilitar a opção:  Email/Senha
+
+
+match /users/{mainUserId}: 
+
+ Aplica-se à coleção users, onde cada documento tem um ID (mainUserId) correspondente ao ID de um usuário principal (geralmente o uid do Firebase Authentication).
+
+ Permite leitura e escrita apenas se o usuario esta autenticado 
+ Permite criar novos documentos em child_users apenas se o usuário autenticado for um main user (role == 'main') 
+
+ ## Test 
+
+ ### Registrar main
+ ```
+ curl -X POST http://localhost:8001/register-main -H "Content-Type: application/json" -d '{"name": "João", "email": "joao@test.com", "password": "senha123"}'
+
+ no postman add a rota no metodo POST:
+ http://localhost:8001/register-main
+ e no body:
+
+ {
+    "name": "Ana Flavia",
+    "email": "ana@test.com",
+    "password": "cafe12"
+}
+ ```
+
+ Ao inserir um usuario principal, um token é gerado no firebase, esse token JWT deve ser usado para criar os childs etc
+ O token deve conter as custom claims role: 'main' e mainUserId correspondente ao UID do usuário principal
+
+ Para obter o token precisa fazer login
+
+### Reuisição de login 
+```
+curl -X POST \
+  "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=<WEB_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "ana@test.com",
+    "password": "cafe12",
+    "returnSecureToken": true
+  }'
+```
+
+Substituir WEB_API_KEY, no firebase nas configurações do projeto -> Geral copiar a chave de API Web, remover <> 
+
+A resposta do login vai ser um json que tera o token de autentificação, exemplo:
+
+```
+{
+  "idToken": "<JWT_TOKEN>",
+  "refreshToken": "...",
+  "expiresIn": "3600",
+  "email": "joao@test.com",
+  "localId": "<USER_UID>",
+  ...
+}
+```
+JWT_TOKEN  - sera o token
+
+### Registrar Child
+```
+curl -X POST http://localhost:8001/child-users -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"name": "Filho1", "email": "filho@test.com", "password": "senha456"}'
+```
+
+No token copiar JWT_TOKEN recebido no login do usuario principal, remover <>
+
+### Listar Childs
+```
+curl -X GET http://localhost:8001/child-users -H "Authorization: Bearer <token>"
+```
+
+### Logar com Child
+```
+curl -X POST "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=<WEB_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "filho@test.com",
+    "password": "senha456",
+    "returnSecureToken": true
+  }'
+```
+Na resposta o "idToken": "<JWT_TOKEN>", tambem retorna no login do child. esse token que retorna pode ser usado para autenticar requisições do usuario filho
+
+### Logout
+
+É usualmente implementado no frontend descartando o token, mas poderia criar uma rota se quisse de logout:
+
+### Main user edit/update child user
+
+Login com main, obter token do child listando os usuarios, pegar o id do usuario que deseja
+
+Para atulizar:
+```
+curl -X PUT http://localhost:8001/child-users/<CHILD_USER_UID> \
+  -H "Authorization: Bearer <JWT_TOKEN_DO_USUARIO_PRINCIPAL>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Filho1 Atualizado"}'
+``` 
+
+## Token
+
+Firebase Authentication, os tokens JWT (idToken) têm um tempo de expiração padrão de 1 hora (3600 segundos)
+
+### Usar refresh tokens para renovar o idToken
+
+Na resposta da requisição de login vem um "refreshToken": "<REFRESH_TOKEN>",  tem que copiar esse refresh token, e suar o endpoint /token da API REST do firebase oara obter um novo idToken:
+```
+curl -X POST "https://securetoken.googleapis.com/v1/token?key=<WEB_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "grant_type": "refresh_token",
+    "refresh_token": "<REFRESH_TOKEN>"
+  }'
+```
+
+Resposta esperada:
+```
+{
+  "access_token": "<NOVO_ID_TOKEN>",
+  "expires_in": "3600",
+  "token_type": "Bearer",
+  "refresh_token": "<NOVO_REFRESH_TOKEN>",
+  "id_token": "<NOVO_ID_TOKEN>",
+  "user_id": "<USER_UID>",
+  "project_id": "<PROJECT_ID>"
+}
+```
+
+Para automatizar a renovação do token pode criar uma rota no fastAPI /refresh-token
+
+```
+curl -X POST http://localhost:8001/refresh-token \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token": "<REFRESH_TOKEN>"}'
+```
+
+
+### Git
+
+git rm --cached planeja_facil_users.tar
+git rm --cached planeja_facil_app.tar
+
+

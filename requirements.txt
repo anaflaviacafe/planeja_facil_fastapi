@@ -1,0 +1,7 @@
+fastapi==0.115.0
+uvicorn==0.30.6
+firebase-admin==6.5.0
+pydantic==2.9.2
+passlib[bcrypt]==1.7.4  # to password hashing bcrypt
+python-dotenv==1.0.1
+requests==2.32.3

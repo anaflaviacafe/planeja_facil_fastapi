@@ -1,0 +1,29 @@
+
+services:
+  app:
+    build: .
+    container_name: planeja_facil_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app  # mount current '.' directory to /app in the conteiner
+                # app main application code, API fastAPI running with uvicorn
+      - ./secrets:/secrets:ro  # Read-only mount for secrets (add if app needs Firebase)
+    env_file:
+      - .env
+    command: uvicorn main:app --host 0.0.0.0 --port 8000  #to allow external access
+
+  users_service:
+    build:
+      context: . # build contxt in root directory
+      dockerfile: services/users/Dockerfile
+    container_name: planeja_facil_users
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./services/users:/app
+      - ./shared:/app/shared   # shared config to firebase, to be accessed by microservice users
+      - ./secrets:/secrets:ro  # Mount secrets of host in /secrets in conteiner
+    env_file:
+      - .env
+    command: uvicorn main:app --host 0.0.0.0 --port 8001
