@@ -13,17 +13,49 @@ services:
       - .env
     command: uvicorn main:app --host 0.0.0.0 --port 8000  #to allow external access
 
-  users_service:
+
+  auth_template:
     build:
-      context: . # build contxt in root directory
-      dockerfile: services/users/Dockerfile
-    container_name: planeja_facil_users
+      context: .
+      dockerfile: services/auth_template/Dockerfile
+    container_name: planeja_facil_auth_template
     ports:
       - "8001:8001"
     volumes:
-      - ./services/users:/app
+      - ./services/auth_template:/app
       - ./shared:/app/shared   # shared config to firebase, to be accessed by microservice users
       - ./secrets:/secrets:ro  # Mount secrets of host in /secrets in conteiner
     env_file:
       - .env
     command: uvicorn main:app --host 0.0.0.0 --port 8001
+
+  blocks_phases_resources:
+    build:
+      context: .
+      dockerfile: services/blocks_phases_resources/Dockerfile
+    container_name: planeja_facil_blocks_phases
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./services/blocks_phases_resources:/app
+      - ./shared:/app/shared
+      - ./secrets:/secrets:ro
+    env_file:
+      - .env
+    command: uvicorn main:app --host 0.0.0.0 --port 8002
+
+  production_orders:
+    build:
+      context: .
+      dockerfile: services/production_orders/Dockerfile
+    container_name: planeja_facil_production_orders
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./services/production_orders:/app
+      - ./shared:/app/shared
+      - ./secrets:/secrets:ro
+    env_file:
+      - .env
+    command: uvicorn main:app --host 0.0.0.0 --port 8003
+

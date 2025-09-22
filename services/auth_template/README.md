@@ -5,6 +5,8 @@
 No projeto planeja-facil, no menu à esquerda, clique em Firestore Database. Clique na aba Rules (Regras)
 Tera um editor de texto com regras padrão, substitua o codigo pela regra:
 
+### Rule user
+
 ```
 rules_version = '2';
 
@@ -27,6 +29,44 @@ service cloud.firestore {
   }
 }
 ```
+
+### Rule Template
+
+```
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Templates: apenas main users podem ler/escrever seus próprios templates
+    match /templates/{document=**} {
+      allow read, write: if request.auth != null && 
+                          request.auth.uid == resource.data.user_id && 
+                          request.auth.token.role == 'main';
+    }
+
+    // Usuários: cada usuário pode ler/escrever seus próprios dados
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Child users: main users podem criar/ler, child users só leem seus dados
+      match /child_users/{childId} {
+        allow read: if request.auth != null && 
+                     (request.auth.uid == childId || 
+                      (request.auth.token.role == 'main' && 
+                       request.auth.token.mainUserId == userId));
+        allow create: if request.auth != null && 
+                      request.auth.token.role == 'main' && 
+                      request.auth.token.mainUserId == userId;
+        allow update, delete: if false; // Bloqueia atualização/deleção por enquanto
+      }
+    }
+  }
+}
+```
+
+
+
+
 ## Autentication
 
 Para criar usuários com e-mail e senha (como no endpoint /register-main), o provedor de autenticação de e-mail/senha deve estar habilitado. No firebase ir em autenticação método de login e abiilitar a opção:  Email/Senha
@@ -167,9 +207,18 @@ curl -X POST http://localhost:8001/refresh-token \
 ```
 
 
-### Git
+### Template Routes
 
-git rm --cached planeja_facil_users.tar
-git rm --cached planeja_facil_app.tar
+```
+curl -H "Authorization: Bearer <token>" http://localhost:8001/templates
+
+curl -X POST -H "Authorization: Bearer <token>" http://localhost:8001/select-template/<template_id>
+
+curl -X POST -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{"name":"Teste","holidays":{"holidays":
+[{"date":"2025-12-25T00:00:00","name":"Natal"}]},"weekStart":1,"weekEnd":5,"shifts":[{"entry":"08:00:00","exit":"17:00:00"}]}' http://localhost:8001/templates
+
+curl -X DELETE -H "Authorization: Bearer <token>" http://localhost:8001/templates/<template_id>
+```
+
 
 

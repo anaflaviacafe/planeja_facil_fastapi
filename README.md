@@ -18,23 +18,27 @@ docker-compose down
 
 ```
 
-planeja_facil_fastapi/
-├── .env
-├── .gitignore
-├── docker-compose.yaml
-├── Dockerfile
-├── main.py
-├── README.md
-├── requirements.txt
-├── services/
-│   ├── users/
-│   │   ├── main.py
-│   │   ├── Dockerfile
-│   │   ├── README.md
-├── shared/
-│   ├── config.py
-│   ├── serviceAccountKey.json
-
+D:\USP\TCC\planeja_facil_fastapi\
+├── secrets/                          # Credenciais do Firebase (não commitar)
+│   └── key.json
+├── services/                         # Pastas para microserviços
+│   ├── auth_template/                # Serviço de usuário + template (porta 8001)
+│   │   ├── main.py                   # Rotas de login, usuários, templates
+│   │   └── Dockerfile
+│   ├── blocks_phases_resources/      # Serviço de cadastro de blocos/fases/recursos (porta 8002)
+│   │   ├── main.py                   # Rotas para CRUD de blocos, fases, recursos
+│   │   └── Dockerfile
+│   └── production_orders/            # Serviço de ordens de produção + apontamentos (porta 8003)
+│       ├── main.py                   # Rotas para OPs, escalonamento, apontamentos
+│       └── Dockerfile
+├── shared/                           # Compartilhado entre serviços (Firebase init)
+│   └── config.py
+├── .env                              # Variáveis comuns (FIREBASE_CREDENTIALS_PATH, etc.)
+├── docker-compose.yaml               # Configuração de todos os containers
+├── Dockerfile                        # Para o app principal (se necessário)
+├── main.py                           # Para o app principal (ex.: roteador geral ou health check)
+├── requirements.txt                  # Dependências comuns (fastapi, uvicorn, firebase-admin, etc.)
+└── .gitignore                        # Ignore secrets, .env, etc.
 ```
 
 ### Firebase

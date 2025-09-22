@@ -1,0 +1,42 @@
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime, time
+
+""" Users """
+
+class UserCreate(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class ChildCreate(BaseModel):
+    name: str
+    email: str
+    password: str
+
+#  refresh token
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+""" Template """
+
+class DateTable(BaseModel):
+    date: datetime
+    name: str
+
+class Holidays(BaseModel):
+    holidays: List[DateTable]
+
+class Shift(BaseModel):
+    entry: time
+    exit: time
+
+class TemplateModel(BaseModel):
+    id: Optional[str] = None
+    name: str
+    holidays: Holidays
+    holidayListName: Optional[str] = None
+    weekStart: int  
+    weekEnd: int    
+    shifts: List[Shift]
+    user_id: Optional[str] = None  # for link main user
