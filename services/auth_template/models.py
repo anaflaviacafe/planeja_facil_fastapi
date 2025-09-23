@@ -28,8 +28,8 @@ class Holidays(BaseModel):
     holidays: List[DateTable]
 
 class Shift(BaseModel):
-    entry: time
-    exit: time
+    entry: str
+    exit: str
 
 class TemplateModel(BaseModel):
     id: Optional[str] = None
