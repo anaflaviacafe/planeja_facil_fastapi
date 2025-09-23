@@ -49,7 +49,7 @@ def require_main_role(current_user: dict = Depends(get_current_user)):
 async def register_main_user(user: UserCreate):
     try:
         created_user = fb_auth.create_user(email=user.email, password=user.password)
-        # check requirements for register
+        # check requirements for register, and define custom claims (role: 'main', mainUserId: <uid>)
         fb_auth.set_custom_user_claims(created_user.uid, {'role': 'main', 'mainUserId': created_user.uid})
         
         db.collection('users').document(created_user.uid).set({

@@ -64,9 +64,6 @@ service cloud.firestore {
 }
 ```
 
-
-
-
 ## Autentication
 
 Para criar usuários com e-mail e senha (como no endpoint /register-main), o provedor de autenticação de e-mail/senha deve estar habilitado. No firebase ir em autenticação método de login e abiilitar a opção:  Email/Senha
@@ -83,14 +80,14 @@ match /users/{mainUserId}:
 
  ### Registrar main
  ```
- curl -X POST http://localhost:8001/register-main -H "Content-Type: application/json" -d '{"name": "João", "email": "joao@test.com", "password": "senha123"}'
+ curl -X POST http://localhost:8001/register-main -H "Content-Type: application/json" -d '{"name": "Ana Flavia Cafe", "email": "ana@test.com", "password": "senha123"}'
 
  no postman add a rota no metodo POST:
  http://localhost:8001/register-main
  e no body:
 
  {
-    "name": "Ana Flavia",
+    "name": "Ana Flavia Cafe",
     "email": "ana@test.com",
     "password": "cafe12"
 }

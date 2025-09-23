@@ -58,6 +58,18 @@ Exemplo: usuarios, templete,  etc. Clique em "Avançar".
 Depois de criar as tabelas, no menu lateral, clique em Configurações do Projeto -> Contas de serviço -> Gerar nova chave privada 
 Baixar o json e adicionar a configuração do SDK dada no firebase no projeto.
 
+ - Custom claims
+
+   São declarações personalizadas, campos que personalizados que pode adicionar token  de autentificação, para armazenar informações como nivel de acesso, plano de assinatura, etc. Na prática serve para controlar permissões por função (ex: role: 'main',  role: 'admin')
+   No caso quando inserir um usuario principal a função deve definir os claims. Se definir no firebase deve tambem configurar os claims. acessando as custom claims com request.auth.token
+  
+   O token de autenticação não se atualiza automaticamente, é necessário que o usuário faça logout e login novamente, ou que forçe a atulização do token no app do cliente.
+   As claims devem ser dados simples (string, boolean, número); não objetos complexos
+
+   Quando cria um usuário no firebase e define isMain: true, o não claim não é configurado, somente é configurado na função de inserir um usuario na api.
+   TOD: Pensar se faço um criar usuario na primeira instalação ou se mando o comando numa rota pela postman para cria-lo!
+
+
 ### .env
 FIREBASE_CREDENTIALS_PATH=/secrets/nomeKeyFirebaseAqui.json
 FIREBASE_DATABASE_URL=url firebase aqui
