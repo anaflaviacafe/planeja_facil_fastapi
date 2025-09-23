@@ -153,21 +153,38 @@ async def get_user_role(current_user: dict = Depends(get_current_user)):
 # list all templates where user_id == mainUserId
 @app.get("/templates")
 async def get_templates(current_user: dict = Depends(require_main_role)):
-    main_user_id = current_user['mainUserId']
-    templates_ref = db.collection("templates").where("user_id", "==", main_user_id).stream()
-    templates = [{"id": doc.id, **doc.to_dict()} for doc in templates_ref]
-    # return list with name, holidays, shifts
-    return {"templates": templates} 
+    try:
+        main_user_id = current_user['mainUserId']
+        logger.info(f"Buscando templates para mainUserId: {main_user_id}")
+        templates_ref = db.collection("templates").where("user_id", "==", main_user_id).get()
+        templates = []
+        for doc in templates_ref:  
+            #logger.info(f"Documento encontrado: {doc.id}")
+            template_data = doc.to_dict()
+            template_data['id'] = doc.id
+            templates.append(template_data)
+        #logger.info(f"Templates retornados: {templates}")
+        return {"templates": templates}
+    except Exception as e:
+        logger.error(f"Erro ao listar templates: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 # Select template and load data
 @app.post("/select-template/{template_id}")
 async def select_template(template_id: str, current_user: dict = Depends(require_main_role)):
-    main_user_id = current_user['mainUserId']
-    template_ref = db.collection("templates").document(template_id)
-    template = template_ref.get()
-    if not template.exists or template.to_dict().get("user_id") != main_user_id:
-        raise HTTPException(status_code=404, detail="Template não encontrado ou não pertence ao usuário")
-    return {"template": {"id": template.id, **template.to_dict()}, "message": "Template selecionado"}
+    try:
+        main_user_id = current_user['mainUserId']
+        doc_ref = db.collection("templates").document(template_id).get()
+        if not doc_ref.exists:
+            raise HTTPException(status_code=404, detail="Template não encontrado")
+        template_data = doc_ref.to_dict()
+        template_data['id'] = template_id  # Garante que o id seja incluído
+        if template_data.get("user_id") != main_user_id:
+            raise HTTPException(status_code=403, detail="Acesso negado")
+        return {"template": template_data}
+    except Exception as e:
+        logger.error(f"Erro ao selecionar template: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 # add template, and link to user_id
 @app.post("/templates")
@@ -184,7 +201,7 @@ async def create_template(template: TemplateModel, current_user: dict = Depends(
         logger.error(f"Erro ao criar template: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-# Edit template
+# Update template
 @app.put("/templates/{template_id}")
 async def update_template(template_id: str, template: TemplateModel, current_user: dict = Depends(require_main_role)):
     main_user_id = current_user['mainUserId']
@@ -193,10 +210,11 @@ async def update_template(template_id: str, template: TemplateModel, current_use
     if not template_doc.exists or template_doc.to_dict().get("user_id") != main_user_id:
         raise HTTPException(status_code=404, detail="Template não encontrado ou não pertence ao usuário")
     try:
-        template_data = template.dict(exclude={"id", "user_id"})
+        template_data = template.dict(exclude={"id", "user_id"}) # exclude in Config
+        logger.info(f"Dados recebidos para atualização: {template.dict()}")
         template_data["updatedAt"] = firestore.SERVER_TIMESTAMP
         template_ref.update(template_data)
-        return {"id": template_id, "message": "Template atualizado", **template_data}
+        return {"id": template_id, "message": "Template atualizado", "name": template_data["name"]}
     except Exception as e:
         logger.error(f"Erro ao atualizar template: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))

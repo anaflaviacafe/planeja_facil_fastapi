@@ -40,3 +40,7 @@ class TemplateModel(BaseModel):
     weekEnd: int    
     shifts: List[Shift]
     user_id: Optional[str] = None  # for link main user
+
+    class Config:
+        arbitrary_types_allowed = True  # Allows custom types if needed
+        exclude = {"id", "user_id"}  # Automatically excludes id and user_id on serialization
