@@ -32,10 +32,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         logger.info(f"Token decodificado: {decoded_token}")
         user_id = decoded_token['uid']
         role = decoded_token.get('role', 'child')
-        main_user_id = decoded_token.get('mainUserId', user_id)  
+        main_user_id = decoded_token.get('mainUserId', user_id)
         return {'uid': user_id, 'role': role, 'mainUserId': main_user_id}
-    except:
-        Logger.error(f"Erro ao verificar token: {str(e)}")
+    except Exception as e:
+        logger.error(f"Erro ao verificar token: {str(e)}")
         raise HTTPException(status_code=401, detail="Token inválido")
 
 # requeire main user  role: 'main'
@@ -146,7 +146,21 @@ async def refresh_token(request: RefreshTokenRequest):
 
 @app.get("/user-role")
 async def get_user_role(current_user: dict = Depends(get_current_user)):
-    return {"role": current_user['role'], "mainUserId": current_user['mainUserId']}
+    try:
+        user_id = current_user['uid']
+        user_doc = db.collection("users").document(user_id).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        user_data = user_doc.to_dict()
+        name = user_data.get("name", "Usuário Desconhecido")
+        return {
+            "role": current_user['role'],
+            "mainUserId": current_user['mainUserId'],
+            "name": name
+        }
+    except Exception as e:
+        logger.error(f"Erro ao obter papel do usuário: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 """ Template """
 
