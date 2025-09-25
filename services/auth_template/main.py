@@ -161,6 +161,12 @@ async def get_templates(current_user: dict = Depends(require_main_role)):
         for doc in templates_ref:  
             #logger.info(f"Documento encontrado: {doc.id}")
             template_data = doc.to_dict()
+
+            week_start = template_data.get("weekStart", 1) # standard monday 1 if not exist 
+            week_end = template_data.get("weekEnd", 5)     # standard friday 5 if not exist 
+            template_data["weekStart"] = (week_start - 1) % 7  # synday 0-based
+            template_data["weekEnd"] = (week_end - 1) % 7    
+
             template_data['id'] = doc.id
             templates.append(template_data)
         #logger.info(f"Templates retornados: {templates}")
@@ -194,6 +200,8 @@ async def create_template(template: TemplateModel, current_user: dict = Depends(
         template_data = template.dict()
         template_data["user_id"] = main_user_id
         template_data["createdAt"] = firestore.SERVER_TIMESTAMP
+        template_data["weekStart"] = template.weekStart  
+        template_data["weekEnd"] = template.weekEnd      
         doc_ref = db.collection("templates").document()
         doc_ref.set(template_data)
         return {"id": doc_ref.id, "message": "Template criado"}
@@ -213,6 +221,8 @@ async def update_template(template_id: str, template: TemplateModel, current_use
         template_data = template.dict(exclude={"id", "user_id"}) # exclude in Config
         logger.info(f"Dados recebidos para atualização: {template.dict()}")
         template_data["updatedAt"] = firestore.SERVER_TIMESTAMP
+        template_data["weekStart"] = template.weekStart 
+        template_data["weekEnd"] = template.weekEnd    
         template_ref.update(template_data)
         return {"id": template_id, "message": "Template atualizado", "name": template_data["name"]}
     except Exception as e:

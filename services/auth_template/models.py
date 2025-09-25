@@ -36,7 +36,7 @@ class TemplateModel(BaseModel):
     name: str
     holidays: Holidays
     holidayListName: Optional[str] = None
-    weekStart: int  
+    weekStart: int   # 0 = sunday, ..., 6 = saturday
     weekEnd: int    
     shifts: List[Shift]
     user_id: Optional[str] = None  # for link main user
