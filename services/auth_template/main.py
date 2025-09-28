@@ -32,10 +32,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         logger.info(f"Token decodificado: {decoded_token}")
         user_id = decoded_token['uid']
         role = decoded_token.get('role', 'child')
-        main_user_id = decoded_token.get('mainUserId', user_id)
+        main_user_id = decoded_token.get('mainUserId', user_id)  
         return {'uid': user_id, 'role': role, 'mainUserId': main_user_id}
-    except Exception as e:
-        logger.error(f"Erro ao verificar token: {str(e)}")
+    except:
+        Logger.error(f"Erro ao verificar token: {str(e)}")
         raise HTTPException(status_code=401, detail="Token inválido")
 
 # requeire main user  role: 'main'
@@ -59,6 +59,43 @@ async def register_main_user(user: UserCreate):
             'createdAt': firestore.SERVER_TIMESTAMP
         })
         return {"message": "Main user criado", "uid": created_user.uid}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/users/{user_id}")
+async def update_main_user(user_id: str, updates: dict, current_user: dict = Depends(get_current_user)):
+    if current_user['uid'] != user_id or current_user['role'] != 'main':
+        raise HTTPException(status_code=403, detail="Apenas o próprio usuário principal pode atualizar seus dados")
+    
+    try:
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        # Validate updates
+        allowed_fields = {'name', 'email', 'password'}
+        if not all(key in allowed_fields for key in updates.keys()):
+            raise HTTPException(status_code=400, detail="Campos inválidos fornecidos")
+
+        # Update Firestore
+        firestore_updates = {}
+        if 'name' in updates:
+            firestore_updates['name'] = updates['name']
+        if 'email' in updates:
+            firestore_updates['email'] = updates['email']
+            # Update Firebase Authentication email
+            fb_auth.update_user(user_id, email=updates['email'])
+        if 'password' in updates:
+            # Update Firebase Authentication password
+            fb_auth.update_user(user_id, password=updates['password'])
+
+        if firestore_updates:
+            user_ref.update(firestore_updates)
+            firestore_updates['updatedAt'] = firestore.SERVER_TIMESTAMP
+            user_ref.update(firestore_updates)
+
+        return {"message": "Usuário principal atualizado"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -146,21 +183,7 @@ async def refresh_token(request: RefreshTokenRequest):
 
 @app.get("/user-role")
 async def get_user_role(current_user: dict = Depends(get_current_user)):
-    try:
-        user_id = current_user['uid']
-        user_doc = db.collection("users").document(user_id).get()
-        if not user_doc.exists:
-            raise HTTPException(status_code=404, detail="Usuário não encontrado")
-        user_data = user_doc.to_dict()
-        name = user_data.get("name", "Usuário Desconhecido")
-        return {
-            "role": current_user['role'],
-            "mainUserId": current_user['mainUserId'],
-            "name": name
-        }
-    except Exception as e:
-        logger.error(f"Erro ao obter papel do usuário: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+    return {"role": current_user['role'], "mainUserId": current_user['mainUserId']}
 
 """ Template """
 
@@ -175,12 +198,10 @@ async def get_templates(current_user: dict = Depends(require_main_role)):
         for doc in templates_ref:  
             #logger.info(f"Documento encontrado: {doc.id}")
             template_data = doc.to_dict()
-
-            week_start = template_data.get("weekStart", 1) # standard monday 1 if not exist 
-            week_end = template_data.get("weekEnd", 5)     # standard friday 5 if not exist 
-            template_data["weekStart"] = (week_start - 1) % 7  # synday 0-based
+            week_start = template_data.get("weekStart", 1)     # standard monday 1 if not exist 
+            week_end = template_data.get("weekEnd", 5)         # standard friday 5 if not exist 
+            template_data["weekStart"] = (week_start - 1) % 7  # sunday 0-based
             template_data["weekEnd"] = (week_end - 1) % 7    
-
             template_data['id'] = doc.id
             templates.append(template_data)
         #logger.info(f"Templates retornados: {templates}")
@@ -215,7 +236,7 @@ async def create_template(template: TemplateModel, current_user: dict = Depends(
         template_data["user_id"] = main_user_id
         template_data["createdAt"] = firestore.SERVER_TIMESTAMP
         template_data["weekStart"] = template.weekStart  
-        template_data["weekEnd"] = template.weekEnd      
+        template_data["weekEnd"] = template.weekEnd   
         doc_ref = db.collection("templates").document()
         doc_ref.set(template_data)
         return {"id": doc_ref.id, "message": "Template criado"}
