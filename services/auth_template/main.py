@@ -35,7 +35,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         main_user_id = decoded_token.get('mainUserId', user_id)  
         return {'uid': user_id, 'role': role, 'mainUserId': main_user_id}
     except:
-        Logger.error(f"Erro ao verificar token: {str(e)}")
+        logger.error(f"Erro ao verificar token: {str(e)}")
         raise HTTPException(status_code=401, detail="Token inválido")
 
 # requeire main user  role: 'main'
@@ -67,36 +67,53 @@ async def update_main_user(user_id: str, updates: dict, current_user: dict = Dep
     if current_user['uid'] != user_id or current_user['role'] != 'main':
         raise HTTPException(status_code=403, detail="Apenas o próprio usuário principal pode atualizar seus dados")
     
+    logger.info(f"Atualizando usuário principal {user_id} com dados: {updates}")
+    
     try:
         user_ref = db.collection('users').document(user_id)
         user_doc = user_ref.get()
         if not user_doc.exists:
+            logger.error(f"Usuário {user_id} não encontrado")
             raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
-        # Validate updates
         allowed_fields = {'name', 'email', 'password'}
         if not all(key in allowed_fields for key in updates.keys()):
+            logger.error(f"Campos inválidos fornecidos: {updates.keys()}")
             raise HTTPException(status_code=400, detail="Campos inválidos fornecidos")
 
-        # Update Firestore
+        # Validate non-empty fields
+        if 'name' in updates and not updates['name'].strip():
+            raise HTTPException(status_code=400, detail="Nome não pode ser vazio")
+        if 'email' in updates and not updates['email'].strip():
+            raise HTTPException(status_code=400, detail="Email não pode ser vazio")
+        if 'password' in updates and len(updates['password']) < 6:
+            raise HTTPException(status_code=400, detail="A senha deve ter pelo menos 6 caracteres")
+
         firestore_updates = {}
         if 'name' in updates:
             firestore_updates['name'] = updates['name']
+            logger.info(f"Atualizando nome para: {updates['name']}")
         if 'email' in updates:
             firestore_updates['email'] = updates['email']
-            # Update Firebase Authentication email
+            logger.info(f"Atualizando email para: {updates['email']} via Firebase Auth")
             fb_auth.update_user(user_id, email=updates['email'])
         if 'password' in updates:
-            # Update Firebase Authentication password
+            logger.info(f"Atualizando senha via Firebase Auth")
             fb_auth.update_user(user_id, password=updates['password'])
 
         if firestore_updates:
-            user_ref.update(firestore_updates)
             firestore_updates['updatedAt'] = firestore.SERVER_TIMESTAMP
             user_ref.update(firestore_updates)
+            logger.info(f"Usuário principal {user_id} atualizado com sucesso")
+
+        # Revoke refresh tokens if sensitive change
+        if 'password' in updates or 'email' in updates:
+            logger.info(f"Revogando tokens de refresh para {user_id}")
+            fb_auth.revoke_refresh_tokens(user_id)
 
         return {"message": "Usuário principal atualizado"}
     except Exception as e:
+        logger.error(f"Erro ao atualizar usuário principal {user_id}: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 # register child user, only main user can crate child users
@@ -181,10 +198,38 @@ async def refresh_token(request: RefreshTokenRequest):
         print(f"Erro ao renovar token: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
+# @app.get("/user-role")
+# async def get_user_role(current_user: dict = Depends(get_current_user)):
+#     return {"role": current_user['role'], "mainUserId": current_user['mainUserId']}
+
 @app.get("/user-role")
 async def get_user_role(current_user: dict = Depends(get_current_user)):
-    return {"role": current_user['role'], "mainUserId": current_user['mainUserId']}
-
+    try:
+        user_ref = db.collection('users').document(current_user['uid'])
+        user_doc = user_ref.get()
+        if not user_doc.exists:
+            logger.warning(f"Documento do usuário {current_user['uid']} não encontrado em Firestore")
+            # Create a default document if missing
+            user_ref.set({
+                'name': current_user.get('email', '').split('@')[0],  # Fallback to email prefix
+                'email': current_user.get('email', ''),
+                'isMain': current_user['role'] == 'main',
+                'createdAt': firestore.SERVER_TIMESTAMP
+            })
+            logger.info(f"Criado documento padrão para usuário {current_user['uid']}")
+            name = current_user.get('email', '').split('@')[0]
+        else:
+            name = user_doc.to_dict().get('name', '')
+        logger.info(f"Obtendo papel para usuário {current_user['uid']}: role={current_user['role']}, name={name}")
+        return {
+            "role": current_user['role'],
+            "mainUserId": current_user['mainUserId'],
+            "name": name
+        }
+    except Exception as e:
+        logger.error(f"Erro ao obter papel do usuário {current_user['uid']}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro interno ao obter papel do usuário: {str(e)}")
+    
 """ Template """
 
 # list all templates where user_id == mainUserId
