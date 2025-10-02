@@ -286,46 +286,6 @@ async def get_templates(current_user: dict = Depends(get_current_user)):
         logger.error(f"Erro ao listar templates: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-# list all templates where user_id == mainUserId
-# @app.get("/templates")
-# async def get_templates(current_user: dict = Depends(get_current_user)):  #child can list of his main
-#     try:
-#         main_user_id = current_user['mainUserId']
-#         logger.info(f"Buscando templates para mainUserId: {main_user_id}")  #load from main_user_id
-#         templates_ref = db.collection("templates").where("user_id", "==", main_user_id).get()
-#         templates = []
-#         for doc in templates_ref:  
-#             #logger.info(f"Documento encontrado: {doc.id}")
-#             template_data = doc.to_dict()
-#             week_start = template_data.get("weekStart", 1)     # standard monday 1 if not exist 
-#             week_end = template_data.get("weekEnd", 5)         # standard friday 5 if not exist 
-#             template_data["weekStart"] = (week_start - 1) % 7  # sunday 0
-#             template_data["weekEnd"] = (week_end - 1) % 7    
-#             template_data['id'] = doc.id
-#             templates.append(template_data)
-#         #logger.info(f"Templates retornados: {templates}")
-#         return {"templates": templates}
-#     except Exception as e:
-#         logger.error(f"Erro ao listar templates: {str(e)}")
-#         raise HTTPException(status_code=400, detail=str(e))
-
-# # Select template and load data
-# @app.post("/select-template/{template_id}")
-# async def select_template(template_id: str, current_user: dict = Depends(require_main_role)):
-#     try:
-#         main_user_id = current_user['mainUserId']
-#         doc_ref = db.collection("templates").document(template_id).get()
-#         if not doc_ref.exists:
-#             raise HTTPException(status_code=404, detail="Template não encontrado")
-#         template_data = doc_ref.to_dict()
-#         template_data['id'] = template_id  # Garante que o id seja incluído
-#         if template_data.get("user_id") != main_user_id:
-#             raise HTTPException(status_code=403, detail="Acesso negado")
-#         return {"template": template_data}
-#     except Exception as e:
-#         logger.error(f"Erro ao selecionar template: {str(e)}")
-#         raise HTTPException(status_code=400, detail=str(e))
-
 # Select a specific template by ID
 @app.post("/select-template/{template_id}")
 async def select_template(template_id: str, current_user: dict = Depends(get_current_user)):
