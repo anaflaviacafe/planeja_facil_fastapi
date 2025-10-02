@@ -160,6 +160,35 @@ async def get_users(current_user: dict = Depends(get_current_user)):
     return {"message": f"Usuário logado: {current_user['role']}", "mainId": current_user.get('mainUserId')}
 
 
+@app.delete("/child-users/{child_id}")
+async def delete_child_user(child_id: str, current_user: dict = Depends(require_main_role)):
+    main_user_id = current_user['mainUserId']
+    try:
+        # Reference to the child user in Firestore
+        child_ref = db.collection('users').document(main_user_id).collection('child_users').document(child_id)
+        child_doc = child_ref.get()
+
+        # Check if the child user exists
+        if not child_doc.exists:
+            logger.error(f"Child user {child_id} not found for main user {main_user_id}")
+            raise HTTPException(status_code=404, detail="Child user não encontrado")
+
+        # Delete from Firestore
+        child_ref.delete()
+        logger.info(f"Child user {child_id} deleted from Firestore for main user {main_user_id}")
+
+        # Delete from Firebase Authentication
+        try:
+            fb_auth.delete_user(child_id)
+            logger.info(f"Child user {child_id} deleted from Firebase Authentication")
+        except Exception as e:
+            logger.warning(f"Failed to delete child user {child_id} from Firebase Authentication: {str(e)}")
+     
+        return {"message": "Child user deletado com sucesso"}
+    except Exception as e:
+        logger.error(f"Error deleting child user {child_id}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Erro ao deletar child user: {str(e)}")
+    
 # to refresh user token
 
 def refresh_user_token(refresh_token: str, web_api_key: str):
@@ -205,71 +234,131 @@ async def refresh_token(request: RefreshTokenRequest):
 @app.get("/user-role")
 async def get_user_role(current_user: dict = Depends(get_current_user)):
     try:
-        user_ref = db.collection('users').document(current_user['uid'])
+        user_id = current_user['uid']
+        role = current_user['role']
+        main_user_id = current_user['mainUserId']
+        logger.info(f"Obtendo papel para usuário {user_id} (role: {role}, mainUserId: {main_user_id})")
+
+        # Fetch user data from Firestore
+        user_ref = db.collection('users').document(user_id)
         user_doc = user_ref.get()
+
         if not user_doc.exists:
-            logger.warning(f"Documento do usuário {current_user['uid']} não encontrado em Firestore")
-            # Create a default document if missing
-            user_ref.set({
-                'name': current_user.get('email', '').split('@')[0],  # Fallback to email prefix
-                'email': current_user.get('email', ''),
-                'isMain': current_user['role'] == 'main',
-                'createdAt': firestore.SERVER_TIMESTAMP
-            })
-            logger.info(f"Criado documento padrão para usuário {current_user['uid']}")
-            name = current_user.get('email', '').split('@')[0]
-        else:
-            name = user_doc.to_dict().get('name', '')
-        logger.info(f"Obtendo papel para usuário {current_user['uid']}: role={current_user['role']}, name={name}")
-        return {
-            "role": current_user['role'],
-            "mainUserId": current_user['mainUserId'],
-            "name": name
+            logger.error(f"Usuário {user_id} não encontrado no Firestore")
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+        user_data = user_doc.to_dict()
+        response = {
+            "role": role,
+            "mainUserId": main_user_id,
+            "name": user_data.get('name', '')
         }
+        logger.info(f"Resposta do user-role: {response}")
+        return response
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        logger.error(f"Erro ao obter papel do usuário {current_user['uid']}: {str(e)}")
+        logger.error(f"Erro ao obter papel do usuário {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro interno ao obter papel do usuário: {str(e)}")
     
 """ Template """
 
-# list all templates where user_id == mainUserId
+# List all templates for the main user associated with the current user (main or child)
 @app.get("/templates")
-async def get_templates(current_user: dict = Depends(require_main_role)):
+async def get_templates(current_user: dict = Depends(get_current_user)):
     try:
         main_user_id = current_user['mainUserId']
-        logger.info(f"Buscando templates para mainUserId: {main_user_id}")
+        logger.info(f"Buscando templates para mainUserId: {main_user_id} (user: {current_user['uid']}, role: {current_user['role']})")
         templates_ref = db.collection("templates").where("user_id", "==", main_user_id).get()
         templates = []
-        for doc in templates_ref:  
-            #logger.info(f"Documento encontrado: {doc.id}")
+        for doc in templates_ref:
+            logger.info(f"Documento encontrado: {doc.id}")
             template_data = doc.to_dict()
-            week_start = template_data.get("weekStart", 1)     # standard monday 1 if not exist 
-            week_end = template_data.get("weekEnd", 5)         # standard friday 5 if not exist 
-            template_data["weekStart"] = (week_start - 1) % 7  # sunday 0-based
-            template_data["weekEnd"] = (week_end - 1) % 7    
+            week_start = template_data.get("weekStart", 1)  # Default to Monday (1)
+            week_end = template_data.get("weekEnd", 5)      # Default to Friday (5)
+            template_data["weekStart"] = (week_start - 1) % 7  # Convert to 0-based
+            template_data["weekEnd"] = (week_end - 1) % 7      # Convert to 0-based
             template_data['id'] = doc.id
             templates.append(template_data)
-        #logger.info(f"Templates retornados: {templates}")
+        logger.info(f"Templates retornados: {len(templates)} templates")
         return {"templates": templates}
     except Exception as e:
         logger.error(f"Erro ao listar templates: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-# Select template and load data
+# list all templates where user_id == mainUserId
+# @app.get("/templates")
+# async def get_templates(current_user: dict = Depends(get_current_user)):  #child can list of his main
+#     try:
+#         main_user_id = current_user['mainUserId']
+#         logger.info(f"Buscando templates para mainUserId: {main_user_id}")  #load from main_user_id
+#         templates_ref = db.collection("templates").where("user_id", "==", main_user_id).get()
+#         templates = []
+#         for doc in templates_ref:  
+#             #logger.info(f"Documento encontrado: {doc.id}")
+#             template_data = doc.to_dict()
+#             week_start = template_data.get("weekStart", 1)     # standard monday 1 if not exist 
+#             week_end = template_data.get("weekEnd", 5)         # standard friday 5 if not exist 
+#             template_data["weekStart"] = (week_start - 1) % 7  # sunday 0
+#             template_data["weekEnd"] = (week_end - 1) % 7    
+#             template_data['id'] = doc.id
+#             templates.append(template_data)
+#         #logger.info(f"Templates retornados: {templates}")
+#         return {"templates": templates}
+#     except Exception as e:
+#         logger.error(f"Erro ao listar templates: {str(e)}")
+#         raise HTTPException(status_code=400, detail=str(e))
+
+# # Select template and load data
+# @app.post("/select-template/{template_id}")
+# async def select_template(template_id: str, current_user: dict = Depends(require_main_role)):
+#     try:
+#         main_user_id = current_user['mainUserId']
+#         doc_ref = db.collection("templates").document(template_id).get()
+#         if not doc_ref.exists:
+#             raise HTTPException(status_code=404, detail="Template não encontrado")
+#         template_data = doc_ref.to_dict()
+#         template_data['id'] = template_id  # Garante que o id seja incluído
+#         if template_data.get("user_id") != main_user_id:
+#             raise HTTPException(status_code=403, detail="Acesso negado")
+#         return {"template": template_data}
+#     except Exception as e:
+#         logger.error(f"Erro ao selecionar template: {str(e)}")
+#         raise HTTPException(status_code=400, detail=str(e))
+
+# Select a specific template by ID
 @app.post("/select-template/{template_id}")
-async def select_template(template_id: str, current_user: dict = Depends(require_main_role)):
+async def select_template(template_id: str, current_user: dict = Depends(get_current_user)):
     try:
         main_user_id = current_user['mainUserId']
-        doc_ref = db.collection("templates").document(template_id).get()
-        if not doc_ref.exists:
+        logger.info(f"Selecionando template {template_id} para mainUserId: {main_user_id} (user: {current_user['uid']}, role: {current_user['role']})")
+        
+        # Fetch the template from Firestore
+        template_ref = db.collection("templates").document(template_id)
+        template_doc = template_ref.get()
+
+        if not template_doc.exists:
+            logger.error(f"Template {template_id} não encontrado")
             raise HTTPException(status_code=404, detail="Template não encontrado")
-        template_data = doc_ref.to_dict()
-        template_data['id'] = template_id  # Garante que o id seja incluído
+
+        template_data = template_doc.to_dict()
+        
+        # Verify that the template belongs to the mainUserId
         if template_data.get("user_id") != main_user_id:
-            raise HTTPException(status_code=403, detail="Acesso negado")
+            logger.error(f"Template {template_id} não pertence ao mainUserId {main_user_id}")
+            raise HTTPException(status_code=403, detail="Acesso negado: Template não pertence ao usuário principal")
+
+        # Process weekStart and weekEnd (consistent with /templates)
+        week_start = template_data.get("weekStart", 1)  # Default to Monday (1)
+        week_end = template_data.get("weekEnd", 5)      # Default to Friday (5)
+        template_data["weekStart"] = (week_start - 1) % 7  # Convert to 0-based (Sunday = 0)
+        template_data["weekEnd"] = (week_end - 1) % 7      # Convert to 0-based
+        template_data["id"] = template_doc.id
+
+        logger.info(f"Template selecionado: {template_data}")
         return {"template": template_data}
     except Exception as e:
-        logger.error(f"Erro ao selecionar template: {str(e)}")
+        logger.error(f"Erro ao selecionar template {template_id}: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 # add template, and link to user_id
