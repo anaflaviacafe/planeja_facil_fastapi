@@ -33,6 +33,7 @@ D:\USP\TCC\planeja_facil_fastapi\
 │       └── Dockerfile
 ├── shared/                           # Compartilhado entre serviços (Firebase init)
 │   └── config.py
+|   └── auth.py  
 ├── .env                              # Variáveis comuns (FIREBASE_CREDENTIALS_PATH, etc.)
 ├── docker-compose.yaml               # Configuração de todos os containers
 ├── Dockerfile                        # Para o app principal (se necessário)
@@ -70,10 +71,75 @@ Baixar o json e adicionar a configuração do SDK dada no firebase no projeto.
    TOD: Pensar se faço um criar usuario na primeira instalação ou se mando o comando numa rota pela postman para cria-lo!
 
 
+No projeto planeja-facil, no menu à esquerda, clique em Firestore Database. Clique na aba Rules (Regras)
+Tera um editor de texto com regras padrão, substitua o codigo pela regra:
+
+### Rules
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Templates: Only main users can read/write their own templates
+    match /templates/{templateId} {
+      allow read, write: if request.auth != null && 
+                          request.auth.token.role == 'main' && 
+                          resource.data.mainUserId == request.auth.token.mainUserId;
+    }
+
+    // Users: Each user can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Child users: Main users can create/read, child users can only read their own data
+      match /child_users/{childId} {
+        allow read: if request.auth != null && 
+                     (request.auth.uid == childId || 
+                      (request.auth.token.role == 'main' && 
+                       request.auth.token.mainUserId == userId));
+        allow create: if request.auth != null && 
+                      request.auth.token.role == 'main' && 
+                      request.auth.token.mainUserId == userId;
+        allow update, delete: if false; // Block updates/deletes for now
+      }
+    }
+
+    // Blocks: Main and child users can read, only main users can write
+    match /blocks/{blockId} {
+      allow read: if request.auth != null && 
+                   resource.data.mainUserId == request.auth.token.mainUserId;
+      allow write: if request.auth != null && 
+                    request.auth.token.role == 'main' && 
+                    resource.data.mainUserId == request.auth.token.mainUserId;
+
+      // Phases subcollection
+      match /phases/{phaseId} {
+        allow read: if request.auth != null && 
+                     resource.data.mainUserId == request.auth.token.mainUserId;
+        allow write: if request.auth != null && 
+                      request.auth.token.role == 'main' && 
+                      resource.data.mainUserId == request.auth.token.mainUserId;
+      }
+    }
+
+    // Resources
+    match /resources/{resourceId} {
+      allow read: if request.auth != null && 
+                   resource.data.mainUserId == request.auth.token.mainUserId;
+      allow write: if request.auth != null && 
+                    request.auth.token.role == 'main' && 
+                    resource.data.mainUserId == request.auth.token.mainUserId;
+    }
+  }
+}
+```
+
+
 ### .env
 FIREBASE_CREDENTIALS_PATH=/secrets/nomeKeyFirebaseAqui.json
 FIREBASE_DATABASE_URL=url firebase aqui
 WEB_API_KEY=chave api aqui
+
 
 ### Endpoints
 

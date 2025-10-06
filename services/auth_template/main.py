@@ -8,6 +8,7 @@ import os
 import requests
 import logging
 from models import UserCreate, ChildCreate, RefreshTokenRequest, TemplateModel
+from shared.auth import get_current_user, require_main_role
 
 load_dotenv() # load .env
 
@@ -26,23 +27,23 @@ logger = logging.getLogger(__name__)
 """ Users """
 
 # Check authenticated user
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        decoded_token = fb_auth.verify_id_token(credentials.credentials)
-        logger.info(f"Token decodificado: {decoded_token}")
-        user_id = decoded_token['uid']
-        role = decoded_token.get('role', 'child')
-        main_user_id = decoded_token.get('mainUserId', user_id)  
-        return {'uid': user_id, 'role': role, 'mainUserId': main_user_id}
-    except:
-        logger.error(f"Erro ao verificar token: {str(e)}")
-        raise HTTPException(status_code=401, detail="Token inválido")
+# def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+#     try:
+#         decoded_token = fb_auth.verify_id_token(credentials.credentials)
+#         logger.info(f"Token decodificado: {decoded_token}")
+#         user_id = decoded_token['uid']
+#         role = decoded_token.get('role', 'child')
+#         main_user_id = decoded_token.get('mainUserId', user_id)  
+#         return {'uid': user_id, 'role': role, 'mainUserId': main_user_id}
+#     except:
+#         logger.error(f"Erro ao verificar token: {str(e)}")
+#         raise HTTPException(status_code=401, detail="Token inválido")
 
-# requeire main user  role: 'main'
-def require_main_role(current_user: dict = Depends(get_current_user)):
-    if current_user['role'] != 'main':
-        raise HTTPException(status_code=403, detail="Apenas main users podem acessar")
-    return current_user
+# # requeire main user role: 'main'
+# def require_main_role(current_user: dict = Depends(get_current_user)):
+#     if current_user['role'] != 'main':
+#         raise HTTPException(status_code=403, detail="Apenas main users podem acessar")
+#     return current_user
 
 # register main user
 @app.post("/register-main")
