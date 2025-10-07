@@ -1,13 +1,33 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from firebase_admin import firestore
+from google.cloud.firestore_v1 import FieldFilter
 from shared.config import db
 from models import BlockCreate, PhaseCreate, ResourceCreate, PhaseUpdateResource
 from shared.auth import get_current_user, require_main_role
-import logging
+from shared.config import logger
 
 app = FastAPI()
 
-logger = logging.getLogger(__name__)
+# Reusable function to validate template existence and ownership
+def validate_template(template_id: str, main_user_id: str) -> None:
+    """
+    Validates that a template exists and belongs to the main user.
+    
+    Args:
+        template_id: The ID of the template to validate.
+        main_user_id: The main user ID to check ownership against.
+    
+    Raises:
+        HTTPException: If the template doesn't exist (404) or doesn't belong to the main user (403).
+    """
+    template_ref = db.collection('templates').document(template_id)
+    template_doc = template_ref.get()
+    if not template_doc.exists:
+        logger.error(f"Template {template_id} not found")
+        raise HTTPException(status_code=404, detail="Template not found")
+    if template_doc.to_dict().get('user_id') != main_user_id:
+        logger.error(f"Template {template_id} does not belong to mainUserId {main_user_id}")
+        raise HTTPException(status_code=403, detail="Access denied: Template does not belong to the main user")
 
 
 # Create a block (main users only)
@@ -15,33 +35,37 @@ logger = logging.getLogger(__name__)
 async def create_block(block: BlockCreate, current_user: dict = Depends(require_main_role)):
     try:
         main_user_id = current_user['mainUserId']
-        user_ref = db.collection('users').document(current_user['uid'])
+        user_id = current_user['uid'] # current user logged
 
-        user_doc = user_ref.get()
-        if not user_doc.exists:
-            logger.error(f"Usuário {current_user['uid']} não encontrado")
-            raise HTTPException(status_code=404, detail="Usuário não encontrado")
-        
-        selected_template = user_doc.to_dict().get('selectedTemplate')
-        if not selected_template:
-            logger.error(f"Usuário {current_user['uid']} não tem template selecionado")
-            raise HTTPException(status_code=400, detail="Nenhum template selecionado")
+        # Validate templateId
+        if not block.templateId:
+            logger.error(f"User {user_id} did not provide templateId")
+            raise HTTPException(status_code=400, detail="No templateId provided")
+
+        # Validate template existence and ownership
+        validate_template(block.templateId, main_user_id)
+
+        # Map durationType to string (optional, depending on your needs)
+        duration_types = {0: "min", 1: "hours", 2: "days"}
+        if block.durationType not in duration_types:
+            logger.error(f"Invalid durationType: {block.durationType}")
+            raise HTTPException(status_code=400, detail="Invalid duration type")
 
         block_data = {
             "name": block.name,
             "description": block.description,
             "mainUserId": main_user_id,
-            "templateName": selected_template,
-            "durationType": "hours",
+            "templateId": block.templateId,
+            "durationType": duration_types[block.durationType],  # Convert int to string
             "createdAt": firestore.SERVER_TIMESTAMP
         }
         
         doc_ref = db.collection("blocks").add(block_data)
         block_id = doc_ref[1].id
-        logger.info(f"Bloco criado: {block_id}")
-        return {"message": "Bloco criado", "id": block_id}
+        logger.info(f"Block created: {block_id}")
+        return {"message": "Block created", "id": block_id}
     except Exception as e:
-        logger.error(f"Erro ao criar bloco: {str(e)}")
+        logger.error(f"Error creating block: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 # List blocks (main and child users)
@@ -53,55 +77,60 @@ async def get_blocks(current_user: dict = Depends(get_current_user)):
         
         user_doc = user_ref.get()
         if not user_doc.exists:
-            logger.error(f"Usuário {current_user['uid']} não encontrado")
-            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+            logger.error(f"User {current_user['uid']} not found")
+            raise HTTPException(status_code=404, detail="User not found")
         
         selected_template = user_doc.to_dict().get('selectedTemplate')
         if not selected_template:
-            logger.info(f"Usuário {current_user['uid']} não tem template selecionado")
+            logger.info(f"User {current_user['uid']} has no selected template")
             return {"blocks": []}
 
-        logger.info(f"Listando blocos para mainUserId: {main_user_id}, template: {selected_template}")
-        blocks_ref = db.collection('blocks').where('mainUserId', '==', main_user_id).where('templateName', '==', selected_template)
+        logger.info(f"Listing blocks for mainUserId: {main_user_id}, template: {selected_template}")
+        # Updated to use FieldFilter to avoid Firestore warning
+        blocks_ref = db.collection('blocks').where(
+            filter=FieldFilter('mainUserId', '==', main_user_id)
+        ).where(
+            filter=FieldFilter('templateId', '==', selected_template)  # Fixed: Use templateId instead of templateName
+        )
         blocks = blocks_ref.get()
         blocks_list = [{"id": block.id, **block.to_dict()} for block in blocks]
-        logger.info(f"Blocos encontrados: {len(blocks_list)}")
+        logger.info(f"Blocks found: {len(blocks_list)}")
         return {"blocks": blocks_list}
     except Exception as e:
-        logger.error(f"Erro ao listar blocos: {str(e)}")
+        logger.error(f"Error listing blocks: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Create a phase (main users only)
+# Create a phase inside block route
 @app.post("/blocks/{block_id}/phases")
 async def create_phase(block_id: str, phase: PhaseCreate, current_user: dict = Depends(require_main_role)):
     try:
         main_user_id = current_user['mainUserId']
-        logger.info(f"Criando fase para bloco {block_id}, mainUserId: {main_user_id}, phase: {phase}")
-        
-        block_ref = db.collection("blocks").document(block_id)
+       
+        # Check if block exists and belongs to mainUserId
+        block_ref = db.collection('blocks').document(block_id)
         block_doc = block_ref.get()
         if not block_doc.exists:
-            logger.error(f"Bloco {block_id} não encontrado")
-            raise HTTPException(status_code=404, detail="Bloco não encontrado")
-        if block_doc.to_dict().get("mainUserId") != main_user_id:
-            logger.error(f"Bloco {block_id} não pertence ao mainUserId {main_user_id}")
-            raise HTTPException(status_code=403, detail="Acesso negado: Bloco não pertence ao usuário principal")
+            logger.error(f"Block {block_id} not found")
+            raise HTTPException(status_code=404, detail="Block not found")
+        if block_doc.to_dict().get('mainUserId') != main_user_id:
+            logger.error(f"Block {block_id} does not belong to mainUserId {main_user_id}")
+            raise HTTPException(status_code=403, detail="Access denied")
 
         phase_data = {
             "name": phase.name,
             "description": phase.description,
             "duration": phase.duration,
             "mainUserId": main_user_id,
-            "templateName": phase.templateName,
             "createdAt": firestore.SERVER_TIMESTAMP
         }
         
-        phase_ref = block_ref.collection("phases").add(phase_data)
-        phase_id = phase_ref[1].id
-        logger.info(f"Fase criada: {phase_id} no bloco {block_id}")
-        return {"message": "Fase criada", "id": phase_id}
+        doc_ref = block_ref.collection('phases').add(phase_data)
+        phase_id = doc_ref[1].id
+
+        logger.info(f"Phase created: {phase_id}")
+        return {"message": "Phase created", "id": phase_id}
     except Exception as e:
-        logger.error(f"Erro ao criar fase: {str(e)}")
+        logger.error(f"Error creating phase: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 # List phases for a block (main and child users)
@@ -109,59 +138,67 @@ async def create_phase(block_id: str, phase: PhaseCreate, current_user: dict = D
 async def get_phases(block_id: str, current_user: dict = Depends(get_current_user)):
     try:
         main_user_id = current_user['mainUserId']
-        logger.info(f"Buscando fases para bloco {block_id}, mainUserId: {main_user_id}")
+        logger.info(f"Fetching phases for block {block_id}, mainUserId: {main_user_id}")
         
         block_ref = db.collection("blocks").document(block_id)
         block_doc = block_ref.get()
         if not block_doc.exists:
-            logger.error(f"Bloco {block_id} não encontrado")
-            raise HTTPException(status_code=404, detail="Bloco não encontrado")
+            logger.error(f"Block {block_id} not found")
+            raise HTTPException(status_code=404, detail="Block not found")
         if block_doc.to_dict().get("mainUserId") != main_user_id:
-            logger.error(f"Bloco {block_id} não pertence ao mainUserId {main_user_id}")
-            raise HTTPException(status_code=403, detail="Acesso negado: Bloco não pertence ao usuário principal")
+            logger.error(f"Block {block_id} does not belong to mainUserId {main_user_id}")
+            raise HTTPException(status_code=403, detail="Access denied: Block does not belong to the main user")
 
         phases_ref = block_ref.collection("phases").get()
         phases = []
         for doc in phases_ref:
             phase_data = doc.to_dict()
             phase_data["id"] = doc.id
-            # Optionally fetch resource data if resourceId exists
-            if phase_data.get("resourceId"):
-                resource_doc = db.collection("resources").document(phase_data["resourceId"]).get()
-                if resource_doc.exists:
-                    phase_data["resource"] = resource_doc.to_dict()
+            # Fetch resource data for the resources list
+            if phase_data.get("resources"):  # Fixed: Check 'resources' list instead of 'resourceId'
+                phase_data["resource_details"] = []
+                for resource_id in phase_data["resources"]:
+                    resource_doc = db.collection("resources").document(resource_id).get()
+                    if resource_doc.exists:
+                        resource_data = resource_doc.to_dict()
+                        resource_data["id"] = resource_id
+                        phase_data["resource_details"].append(resource_data)
             phases.append(phase_data)
         
-        logger.info(f"Fases retornadas: {len(phases)} fases")
+        logger.info(f"Phases returned: {len(phases)} phases")
         return {"phases": phases}
     except Exception as e:
-        logger.error(f"Erro ao listar fases: {str(e)}")
+        logger.error(f"Error listing phases: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-# Create a resource (main users only)
+# Create a resource 
 @app.post("/resources")
 async def create_resource(resource: ResourceCreate, current_user: dict = Depends(require_main_role)):
     try:
         main_user_id = current_user['mainUserId']
-        logger.info(f"Criando recurso para mainUserId: {main_user_id}, resource: {resource}")
+        user_id = current_user['uid']
         
+        # Validate template existence and ownership
+        validate_template(resource.templateId, main_user_id)
+
         resource_data = {
             "name": resource.name,
             "description": resource.description,
             "code": resource.code,
             "type": resource.type,
+            "templateId": resource.templateId,
             "mainUserId": main_user_id,
-            "templateName": resource.templateName,
             "active": resource.active,
             "createdAt": firestore.SERVER_TIMESTAMP
         }
         
         doc_ref = db.collection("resources").add(resource_data)
         resource_id = doc_ref[1].id
-        logger.info(f"Recurso criado: {resource_id}")
-        return {"message": "Recurso criado", "id": resource_id}
+       
+        logger.info(f"Resource created: {resource_id}")
+        return {"message": "Resource created", "id": resource_id}
     except Exception as e:
-        logger.error(f"Erro ao criar recurso: {str(e)}")
+        logger.error(f"Error creating resource: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 # List resources (main and child users)
@@ -169,55 +206,68 @@ async def create_resource(resource: ResourceCreate, current_user: dict = Depends
 async def get_resources(current_user: dict = Depends(get_current_user)):
     try:
         main_user_id = current_user['mainUserId']
-        logger.info(f"Buscando recursos para mainUserId: {main_user_id} (user: {current_user['uid']}, role: {current_user['role']})")
+        logger.info(f"Fetching resources for mainUserId: {main_user_id} (user: {current_user['uid']}, role: {current_user['role']})")
         
-        resources_ref = db.collection("resources").where("mainUserId", "==", main_user_id).get()
+        # Updated to use FieldFilter to avoid Firestore warning
+        resources_ref = db.collection("resources").where(
+            filter=FieldFilter("mainUserId", "==", main_user_id)
+        ).get()
         resources = []
         for doc in resources_ref:
             resource_data = doc.to_dict()
             resource_data["id"] = doc.id
             resources.append(resource_data)
         
-        logger.info(f"Recursos retornados: {len(resources)} recursos")
+        logger.info(f"Resources returned: {len(resources)} resources")
         return {"resources": resources}
     except Exception as e:
-        logger.error(f"Erro ao listar recursos: {str(e)}")
+        logger.error(f"Error listing resources: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-# Assign a resource to a phase (main users only)
-@app.post("/blocks/{block_id}/phases/{phase_id}/assign-resource")
-async def assign_resource_to_phase(block_id: str, phase_id: str, update: PhaseUpdateResource, current_user: dict = Depends(require_main_role)):
+# Associate resource in phase inside block
+@app.post("/blocks/{block_id}/phases/{phase_id}/resources")
+async def add_resource_to_phase(block_id: str, phase_id: str, resource: PhaseUpdateResource, current_user: dict = Depends(require_main_role)):
     try:
         main_user_id = current_user['mainUserId']
-        logger.info(f"Atribuindo recurso {update.resourceId} à fase {phase_id} no bloco {block_id}, mainUserId: {main_user_id}")
-        
-        block_ref = db.collection("blocks").document(block_id)
+
+        # Verify block exists and belongs to mainUserId
+        block_ref = db.collection('blocks').document(block_id)
         block_doc = block_ref.get()
         if not block_doc.exists:
-            logger.error(f"Bloco {block_id} não encontrado")
-            raise HTTPException(status_code=404, detail="Bloco não encontrado")
-        if block_doc.to_dict().get("mainUserId") != main_user_id:
-            logger.error(f"Bloco {block_id} não pertence ao mainUserId {main_user_id}")
-            raise HTTPException(status_code=403, detail="Acesso negado: Bloco não pertence ao usuário principal")
+            logger.error(f"Block {block_id} not found")
+            raise HTTPException(status_code=404, detail="Block not found")
+        if block_doc.to_dict().get('mainUserId') != main_user_id:
+            logger.error(f"Block {block_id} does not belong to mainUserId {main_user_id}")
+            raise HTTPException(status_code=403, detail="Access denied")
 
-        phase_ref = block_ref.collection("phases").document(phase_id)
+        # Verify phase exists
+        phase_ref = block_ref.collection('phases').document(phase_id)
         phase_doc = phase_ref.get()
         if not phase_doc.exists:
-            logger.error(f"Fase {phase_id} não encontrada")
-            raise HTTPException(status_code=404, detail="Fase não encontrada")
+            logger.error(f"Phase {phase_id} not found in block {block_id}")
+            raise HTTPException(status_code=404, detail="Phase not found")
 
-        resource_ref = db.collection("resources").document(update.resourceId)
+        # Verify resource exists and belongs to mainUserId
+        resource_ref = db.collection('resources').document(resource.resourceId)
         resource_doc = resource_ref.get()
         if not resource_doc.exists:
-            logger.error(f"Recurso {update.resourceId} não encontrado")
-            raise HTTPException(status_code=404, detail="Recurso não encontrado")
-        if resource_doc.to_dict().get("mainUserId") != main_user_id:
-            logger.error(f"Recurso {update.resourceId} não pertence ao mainUserId {main_user_id}")
-            raise HTTPException(status_code=403, detail="Acesso negado: Recurso não pertence ao usuário principal")
+            logger.error(f"Resource {resource.resourceId} not found")
+            raise HTTPException(status_code=404, detail="Resource not found")
+        if resource_doc.to_dict().get('mainUserId') != main_user_id:
+            logger.error(f"Resource {resource.resourceId} does not belong to mainUserId {main_user_id}")
+            raise HTTPException(status_code=403, detail="Access denied")
 
-        phase_ref.update({"resourceId": update.resourceId})
-        logger.info(f"Recurso {update.resourceId} atribuído à fase {phase_id}")
-        return {"message": "Recurso atribuído à fase"}
+        # Add resourceId to phase's resources list
+        phase_data = phase_doc.to_dict()
+        resources = phase_data.get('resources', [])  # List of resourceIds
+        if resource.resourceId not in resources:
+            resources.append(resource.resourceId)
+            phase_ref.update({"resources": resources})
+            logger.info(f"Resource {resource.resourceId} associated with phase {phase_id}")
+        else:
+            logger.info(f"Resource {resource.resourceId} already associated with phase {phase_id}")
+
+        return {"message": f"Resource {resource.resourceId} associated with phase {phase_id}"}
     except Exception as e:
-        logger.error(f"Erro ao atribuir recurso: {str(e)}")
+        logger.error(f"Error associating resource with phase: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))

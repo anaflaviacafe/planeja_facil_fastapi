@@ -3,6 +3,8 @@
 ```
 pip install fastapi uvicorn
 
+pip install google-cloud-firestore
+
 docker-compose up --build
 
 docker-compose build --no-cache
