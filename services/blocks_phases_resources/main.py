@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from firebase_admin import firestore
 from google.cloud.firestore_v1 import FieldFilter
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from shared.config import db
 from models import BlockCreate, PhaseCreate, ResourceCreate, PhaseUpdateResource
 from shared.auth import get_current_user, require_main_role
@@ -68,37 +70,99 @@ async def create_block(block: BlockCreate, current_user: dict = Depends(require_
         logger.error(f"Error creating block: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-# List blocks (main and child users)
+# List blocks
 @app.get("/blocks")
 async def get_blocks(current_user: dict = Depends(get_current_user)):
     try:
         main_user_id = current_user['mainUserId']
-        user_ref = db.collection('users').document(current_user['uid'])
-        
+
+        user_ref = db.collection('users').document(current_user['uid'])                
         user_doc = user_ref.get()
+
         if not user_doc.exists:
             logger.error(f"User {current_user['uid']} not found")
             raise HTTPException(status_code=404, detail="User not found")
         
         selected_template = user_doc.to_dict().get('selectedTemplate')
+        
         if not selected_template:
             logger.info(f"User {current_user['uid']} has no selected template")
             return {"blocks": []}
 
         logger.info(f"Listing blocks for mainUserId: {main_user_id}, template: {selected_template}")
-        # Updated to use FieldFilter to avoid Firestore warning
+      
         blocks_ref = db.collection('blocks').where(
             filter=FieldFilter('mainUserId', '==', main_user_id)
         ).where(
-            filter=FieldFilter('templateId', '==', selected_template)  # Fixed: Use templateId instead of templateName
+            filter=FieldFilter('templateId', '==', selected_template)  
         )
+        
+        #blocks = blocks_ref.get()
+        #blocks_list = [{"id": block.id, **block.to_dict()} for block in blocks]
+
         blocks = blocks_ref.get()
-        blocks_list = [{"id": block.id, **block.to_dict()} for block in blocks]
+        blocks_list = []
+        for block in blocks:
+            block_data = block.to_dict()
+            block_data['id'] = block.id
+            blocks_list.append(block_data)
+        
         logger.info(f"Blocks found: {len(blocks_list)}")
         return {"blocks": blocks_list}
     except Exception as e:
         logger.error(f"Error listing blocks: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
+# delete a block
+@app.delete("/blocks/{block_id}")
+async def delete_block(block_id: str, current_user: dict = Depends(require_main_role)):
+    main_user_id = current_user['mainUserId']
+    try:
+        
+       # Reference the block document
+        block_ref = db.collection("blocks").document(block_id)
+        block_doc = block_ref.get()
+
+        if not block_doc.exists:
+            logger.error(f"Block {block_id} not found for main user {main_user_id}")
+            raise HTTPException(status_code=404, detail="Bloco não encontrado")
+
+        # get block data
+        block = block_doc.to_dict()
+
+        # Validate templateId
+        if not block.get("templateId"):
+            logger.error(f"No templateId found for block {block_id}")
+            raise HTTPException(status_code=400, detail="No templateId found")
+
+        # Validate template existence and ownership
+        validate_template(block["templateId"], main_user_id)
+
+        # Firebase batch (lote) operation to delete a block and its associate phases 
+        batch = db.batch()
+        batch.delete(block_ref)
+
+        # Delete associated phases (top-level collection)
+        phases_query = db.collection("phases").where("blockId", "==", block_id)
+        phases_docs = phases_query.get()
+        for phase_doc in phases_docs:
+            batch.delete(phase_doc.reference)
+
+        # Commit batch (deletes block and phases, preserves resources)
+        batch.commit()
+        logger.info(f"Block {block_id} and associated phases deleted for main user {main_user_id}")
+
+        ## or sync commit
+        # Run synchronous commit in a separate thread
+        # loop = asyncio.get_event_loop()
+        # with ThreadPoolExecutor() as pool:
+        #     await loop.run_in_executor(pool, batch.commit)
+
+        return {"message": "Bloco deletado com sucesso"}
+    except Exception as e:
+        logger.error(f"Error deleting block {block_id}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Erro ao deletar child user: {str(e)}")
 
 # Create a phase inside block route
 @app.post("/blocks/{block_id}/phases")
@@ -154,8 +218,9 @@ async def get_phases(block_id: str, current_user: dict = Depends(get_current_use
         for doc in phases_ref:
             phase_data = doc.to_dict()
             phase_data["id"] = doc.id
+
             # Fetch resource data for the resources list
-            if phase_data.get("resources"):  # Fixed: Check 'resources' list instead of 'resourceId'
+            if phase_data.get("resources"):  
                 phase_data["resource_details"] = []
                 for resource_id in phase_data["resources"]:
                     resource_doc = db.collection("resources").document(resource_id).get()

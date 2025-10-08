@@ -53,7 +53,7 @@ async def register_main_user(user: UserCreate):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# pdate  main user
+# update  main user
 @app.put("/users/{user_id}")
 async def update_main_user(user_id: str, updates: dict, current_user: dict = Depends(get_current_user)):
 
@@ -177,6 +177,8 @@ async def update_child_user(child_id: str, updates: dict, current_user: dict = D
 @app.get("/users")
 async def get_users(current_user: dict = Depends(get_current_user)):
     return {"message": f"Usuário logado: {current_user['role']}", "mainId": current_user.get('mainUserId')}
+
+#TODO delete main user and associetes childs
 
 # delete a child user
 @app.delete("/child-users/{child_id}")

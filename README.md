@@ -110,7 +110,7 @@ service cloud.firestore {
     match /blocks/{blockId} {
       allow read: if request.auth != null && 
                    resource.data.mainUserId == request.auth.token.mainUserId;
-      allow write: if request.auth != null && 
+      allow write, delete: if request.auth != null && 
                     request.auth.token.role == 'main' && 
                     resource.data.mainUserId == request.auth.token.mainUserId;
 
