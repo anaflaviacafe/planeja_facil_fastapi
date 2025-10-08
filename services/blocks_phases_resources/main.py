@@ -113,7 +113,34 @@ async def get_blocks(current_user: dict = Depends(get_current_user)):
         logger.error(f"Error listing blocks: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
-    
+# update block
+@app.put("/blocks/{block_id}")
+async def update_block(block_id: str, block: BlockCreate, current_user: dict = Depends(require_main_role)):
+    main_user_id = current_user['mainUserId']
+
+    # Reference the block document in Firestore
+    block_ref = db.collection("blocks").document(block_id)
+    block_doc = block_ref.get()
+
+    # Check block exists and belongs to the main user
+    if not block_doc.exists or block_doc.to_dict().get("mainUserId") != main_user_id:
+        raise HTTPException(status_code=404, detail="Bloco não encontrado ou não pertence ao usuário")
+    try:
+   
+        # id keep the same  
+        # block_data = block.dict(exclude={"id", "block_id"})    
+        block_data = block.dict(exclude_unset=True)  # Exclude unset fields to avoid overwriting with null, also excluds id
+        #logger.info(f"Dados recebidos para atualização: {block.dict()}") 
+        block_data["updatedAt"] = firestore.SERVER_TIMESTAMP
+             
+        # Update block document in Firestore
+        block_ref.update(block_data)
+       
+        return {"id": block_id, "message": "Bloco atualizado", "name": block_data["name"]}
+    except Exception as e:
+        logger.error(f"Erro ao atualizar bloco: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+       
 # delete a block
 @app.delete("/blocks/{block_id}")
 async def delete_block(block_id: str, current_user: dict = Depends(require_main_role)):

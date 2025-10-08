@@ -398,10 +398,9 @@ async def update_template(template_id: str, template: TemplateModel, current_use
     if not template_doc.exists or template_doc.to_dict().get("user_id") != main_user_id:
         raise HTTPException(status_code=404, detail="Template não encontrado ou não pertence ao usuário")
     try:
-        # Convert TemplateModel to a dictionary, excluding id and user_id (as defined in Pydantic Config)
-        template_data = template.dict(exclude={"id", "user_id"})  
-  
-        logger.info(f"Dados recebidos para atualização: {template.dict()}") 
+        # id is the same
+        template_data = template.dict(exclude={"id", "user_id"})    
+        #logger.info(f"Dados recebidos para atualização: {template.dict()}") 
         template_data["updatedAt"] = firestore.SERVER_TIMESTAMP
        
         # Ensure weekStart and weekEnd are included as provided

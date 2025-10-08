@@ -9,7 +9,7 @@ class DurationType(IntEnum):
 class BlockCreate(BaseModel):
     name: str
     description: str
-    durationType: int
+    durationType: DurationType
     templateId: str
 
 class PhaseCreate(BaseModel):
