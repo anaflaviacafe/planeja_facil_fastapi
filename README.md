@@ -148,7 +148,37 @@ WEB_API_KEY=chave api aqui
  - service app http://localhost:8000  
  - service users http://localhost:8001/users
 
- ## Imagem Docker
+
+### Conteiner sync time
+
+Only do this if error TIMESTAMP not fix in login  
+
+```
+sudo apt-get install -y ntp
+sudo systemctl enable ntp
+sudo systemctl start ntp
+
+#sync :
+sudo ntpdate pool.ntp.org
+verify:
+ntpdate -q pool.ntp.org
+```
+
+Add NTP to your Dockerfile for planeja_facil_auth_template:
+```
+RUN apt-get update && apt-get install -y ntp && ntpd -gq
+```
+```
+services:
+  planeja_facil_auth_template:
+    image: your_image
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+```
+
+
+### Imagem Docker
 
  As imagens Docker são criadas a partir dos Dockerfiles e do docker-compose.yaml
 
