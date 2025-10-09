@@ -1,15 +1,16 @@
 from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 from pydantic import BaseModel
 from shared.config import db, fb_auth
 from firebase_admin import firestore
 from dotenv import load_dotenv
 import os
 import requests
-from google.cloud.firestore_v1 import FieldFilter  # recommended to avoid Firestore warning
-from models import UserCreate, ChildCreate, RefreshTokenRequest, TemplateModel
+from google.cloud.firestore_v1 import FieldFilter, CollectionReference   # FieldFilter recommended to avoid Firestore warning
+from models import*
 from shared.auth import get_current_user, require_main_role
 from shared.config import logger
+
 
 # Load environment variables from .env file for configuration (e.g., WEB_API_KEY for Firebase)
 load_dotenv()  
@@ -30,6 +31,81 @@ security = HTTPBearer()  # tokens JWT
 #     # Return the list of users
 #     return {"users": users}
 
+
+""" Admin Endpoints """
+
+# API key header for admin authentication
+admin_api_key = APIKeyHeader(name="X-Admin-API-Key")
+
+# Validate admin API key
+def verify_admin_api_key(api_key: str = Depends(admin_api_key)):
+    expected_api_key = os.getenv("ADMIN_API_KEY")
+    if not expected_api_key or api_key != expected_api_key:
+        logger.error("Invalid or missing admin API key")
+        raise HTTPException(status_code=403, detail="Invalid admin API key")
+    return api_key
+
+# function delete a collection and its subcollections
+def delete_by_user_id(collection_name: str, user_id: str):
+    try:
+        collection_ref = db.collection(collection_name)
+        query = collection_ref.where("user_id", "==", user_id).stream()
+        deleted = 0
+        for doc in query:
+            doc.reference.delete()
+            deleted += 1
+            logger.info(f"Deleted document {doc.id} in {collection_name} for user {user_id}")
+        return deleted
+    except Exception as e:
+        logger.error(f"Error deleting documents in {collection_name} for user {user_id}: {str(e)}")
+        raise
+    
+
+# Admin endpoint to delete any user and their data
+@app.delete("/admin/delete-user/{user_id}")
+async def admin_delete_user(user_id: str, api_key: str = Depends(verify_admin_api_key)):
+    try:
+        # Verify user exists in Firebase Authentication
+        try:
+            fb_auth.get_user(user_id)
+        except fb_auth.UserNotFoundError:
+            logger.error(f"User {user_id} not found in Firebase Authentication")
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Delete user data from Firestore (users collection)
+        user_ref = db.collection('users').document(user_id)
+        if user_ref.get().exists:
+            for subcoll in user_ref.collections():
+                delete_collection(subcoll)
+                logger.info(f"Deleted subcollection {subcoll.id} for user {user_id}")
+            user_ref.delete()
+            logger.info(f"Deleted user document {user_id}")
+
+        # Delete child users from Firebase Authentication and Firestore
+        child_users_ref = user_ref.collection('child_users')
+        child_docs = child_users_ref.stream()
+        for child_doc in child_docs:
+            child_id = child_doc.id
+            try:
+                fb_auth.delete_user(child_id)
+                logger.info(f"Deleted child user {child_id} from Firebase Authentication")
+            except Exception as e:
+                logger.warning(f"Failed to delete child user {child_id} from Firebase Auth: {str(e)}")
+
+        # Delete related data in blocks, phases, and resources collections
+        for collection in ['templates,' 'blocks', 'phases', 'resources']:
+            deleted_count = delete_by_user_id(collection, user_id)
+            logger.info(f"Deleted {deleted_count} documents in {collection} for user {user_id}")
+
+        # Delete the main user from Firebase Authentication
+        fb_auth.delete_user(user_id)
+        logger.info(f"Deleted main user {user_id} from Firebase Authentication")
+
+        return {"message": f"User {user_id} and associated data deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting user {user_id}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Error deleting user: {str(e)}")
+
 """ Users """
 
 # register main user
@@ -41,13 +117,24 @@ async def register_main_user(user: UserCreate):
         # Set custom claims for the user to define their role as 'main' and link them to their own mainUserId
         fb_auth.set_custom_user_claims(created_user.uid, {'role': 'main', 'mainUserId': created_user.uid})
         
-        # Store user data in Firestore under the 'users' collection
-        db.collection('users').document(created_user.uid).set({
+         # Store user data in Firestore
+        user_ref = db.collection('users').document(created_user.uid)
+        user_ref.set({
             'name': user.name,
             'email': user.email,
-            'isMain': True,  
-            'createdAt': firestore.SERVER_TIMESTAMP 
+            'isMain': True,
+            'createdAt': firestore.SERVER_TIMESTAMP
         })
+
+        # Initialize resourcesTypes subcollection
+        resources_types_ref = user_ref.collection('resourcesTypes')
+        for type_name in DEFAULT_RESOURCE_TYPES: #default resource types list in models.py
+            resources_types_ref.add({
+                'name': type_name,
+                'isDefault': True,
+                'createdAt': firestore.SERVER_TIMESTAMP
+            })
+            logger.info(f"Added default resource type '{type_name}' for user {created_user.uid}")
 
         return {"message": "Main user criado", "uid": created_user.uid}
     except Exception as e:
@@ -178,7 +265,6 @@ async def update_child_user(child_id: str, updates: dict, current_user: dict = D
 async def get_users(current_user: dict = Depends(get_current_user)):
     return {"message": f"Usuário logado: {current_user['role']}", "mainId": current_user.get('mainUserId')}
 
-#TODO delete main user and associetes childs
 
 # delete a child user
 @app.delete("/child-users/{child_id}")
@@ -287,6 +373,135 @@ async def get_user_role(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Erro ao obter papel do usuário {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro interno ao obter papel do usuário: {str(e)}")
+
+""" Delete user and all subcollections"""
+
+def delete_collection(coll_ref: CollectionReference, batch_size: int = 100):
+    docs = coll_ref.limit(batch_size).stream()
+    deleted = 0
+    for doc in docs:
+        # Delete subcollections recursively
+        for subcoll in doc.reference.collections():
+            delete_collection(subcoll, batch_size)
+        doc.reference.delete()
+        deleted += 1
+    if deleted >= batch_size:
+        return delete_collection(coll_ref, batch_size)
+
+@app.delete("/users/{user_id}")
+async def delete_main_user(user_id: str, current_user: dict = Depends(require_main_role)):
+    if current_user['uid'] != user_id:
+        logger.error(f"User {current_user['uid']} attempted to delete user {user_id}")
+        raise HTTPException(status_code=403, detail="Only the main user can delete their account")
+    
+    try:
+        # Delete user data from Firestore
+        user_ref = db.collection('users').document(user_id)
+        
+        # Delete all subcollections (resourcesTypes, child_users, resources, blocks, phases, templates)
+        for subcoll in user_ref.collections():
+            delete_collection(subcoll)
+            logger.info(f"Deleted subcollection {subcoll.id} for user {user_id}")
+        
+        # Delete the main user document
+        user_ref.delete()
+        logger.info(f"Deleted user document {user_id}")
+
+        # Delete child users from Firebase Authentication and Firestore
+        child_users_ref = user_ref.collection('child_users')
+        child_docs = child_users_ref.stream()
+        for child_doc in child_docs:
+            child_id = child_doc.id
+            try:
+                fb_auth.delete_user(child_id)
+                logger.info(f"Deleted child user {child_id} from Firebase Authentication")
+            except Exception as e:
+                logger.warning(f"Failed to delete child user {child_id} from Firebase Auth: {str(e)}")
+        
+        # Delete the main user from Firebase Authentication
+        fb_auth.delete_user(user_id)
+        logger.info(f"Deleted main user {user_id} from Firebase Authentication")
+
+        return {"message": "Main user and associated data deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting main user {user_id}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Error deleting user: {str(e)}")
+
+""" Resources Types """
+
+# Add a new resource type
+@app.post("/resources-types")
+async def add_resource_type(resource_type: ResourceTypeCreate, current_user: dict = Depends(require_main_role)):
+    try:
+        main_user_id = current_user['mainUserId']
+        resources_types_ref = db.collection('users').document(main_user_id).collection('resourcesTypes')
+        
+        # Check if type already exists
+        existing_types = resources_types_ref.where('name', '==', resource_type.name).get()
+        if existing_types:
+            logger.error(f"Resource type '{resource_type.name}' already exists for user {main_user_id}")
+            raise HTTPException(status_code=400, detail="Resource type already exists")
+        
+        # Add new type (not default)
+        doc_ref = resources_types_ref.add({
+            'name': resource_type.name,
+            'isDefault': False,
+            'createdAt': firestore.SERVER_TIMESTAMP
+        })
+        logger.info(f"Added resource type '{resource_type.name}' for user {main_user_id}")
+        return {"message": "Resource type added", "id": doc_ref[1].id}
+    except Exception as e:
+        logger.error(f"Error adding resource type: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    
+# Delete a resource type
+@app.delete("/resources-types/{type_id}")
+async def delete_resource_type(type_id: str, current_user: dict = Depends(require_main_role)):
+    try:
+        main_user_id = current_user['mainUserId']
+        resources_types_ref = db.collection('users').document(main_user_id).collection('resourcesTypes')
+        doc_ref = resources_types_ref.document(type_id)
+        doc = doc_ref.get()
+
+        if not doc.exists:
+            logger.error(f"Resource type {type_id} not found for user {main_user_id}")
+            raise HTTPException(status_code=404, detail="Resource type not found")
+        
+        # Prevent deletion of default types
+        if doc.to_dict().get('isDefault', False):
+            logger.error(f"Attempted to delete default resource type {type_id} for user {main_user_id}")
+            raise HTTPException(status_code=403, detail="Cannot delete default resource types")
+        
+        # Check if type is in use (optional, if you have a resources collection)
+        resources_ref = db.collection('users').document(main_user_id).collection('resources')
+        resources_using_type = resources_ref.where('typeId', '==', type_id).get()
+        if resources_using_type:
+            logger.error(f"Resource type {type_id} is in use by resources")
+            raise HTTPException(status_code=400, detail="Cannot delete resource type in use")
+
+        doc_ref.delete()
+        logger.info(f"Deleted resource type {type_id} for user {main_user_id}")
+        return {"message": "Resource type deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting resource type: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    
+# Read resource types
+@app.get("/resources-types")
+async def get_resource_types(current_user: dict = Depends(require_main_role)):
+    try:
+        main_user_id = current_user['mainUserId']
+        resources_types_ref = db.collection('users').document(main_user_id).collection('resourcesTypes')
+        docs = resources_types_ref.stream()
+        resource_types = [
+            {"id": doc.id, **doc.to_dict()} for doc in docs
+        ]
+        logger.info(f"Retrieved {len(resource_types)} resource types for user {main_user_id}")
+        return resource_types
+    except Exception as e:
+        logger.error(f"Error retrieving resource types: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
 """ Template """
 

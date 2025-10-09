@@ -44,3 +44,15 @@ class TemplateModel(BaseModel):
     class Config:
         arbitrary_types_allowed = True  # Allows custom types if needed
         exclude = {"id", "user_id"}  # Automatically excludes id and user_id on serialization
+
+
+""" Resources  Types"""
+class ResourceTypeCreate(BaseModel):
+    name: str
+
+# Pydantic model for updating/deleting (if needed)
+class ResourceTypeUpdate(BaseModel):
+    name: str
+
+# Default resource types
+DEFAULT_RESOURCE_TYPES = ['Humano', 'Local', 'Máquina', 'Próprio']

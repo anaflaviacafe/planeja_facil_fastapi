@@ -24,7 +24,7 @@ match /users/{mainUserId}:
  {
     "name": "Ana Flavia Cafe",
     "email": "ana@test.com",
-    "password": "cafe12"
+    "password": "senha123"
 }
  ```
 
@@ -36,16 +36,16 @@ match /users/{mainUserId}:
 ### Reuisição de login 
 ```
 curl -X POST \
-  "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=<WEB_API_KEY>" \
+  "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=WEB_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "email": "ana@test.com",
-    "password": "cafe12",
+    "password": "senha123",
     "returnSecureToken": true
   }'
 ```
 
-Substituir WEB_API_KEY, no firebase nas configurações do projeto -> Geral copiar a chave de API Web, remover <> 
+Substituir WEB_API_KEY, no firebase nas configurações do projeto -> Geral copiar a chave de API Web, remover 
 
 A resposta do login vai ser um json que tera o token de autentificação, exemplo:
 
@@ -84,6 +84,25 @@ curl -X POST "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassw
   }'
 ```
 Na resposta o "idToken": "<JWT_TOKEN>", tambem retorna no login do child. esse token que retorna pode ser usado para autenticar requisições do usuario filho
+
+
+### Deletar usuario principal recursivamente
+```
+curl -X DELETE \
+  'http://localhost:8001/users/main_user_id_here' \
+  -H 'Authorization: Bearer token_here' \
+  -H 'Content-Type: application/json'
+```
+No caso token ai seria do usuario main logado, mas como vou usar o firebase para excluir, adicionar um endpoint:
+/admin/delete-user/{user_id} no FastAPI par apermitir que o admin delete o usuario recursivamente
+
+File: admin.py, usando a rota nova para deletar com a chave da API, fica:
+```
+curl -X DELETE \
+  'http://localhost:8001/admin/delete-user/main_user_id_here' \
+  -H 'X-Admin-API-Key: ADMIN_API_KEY' \
+  -H 'Content-Type: application/json'
+```
 
 ### Logout
 

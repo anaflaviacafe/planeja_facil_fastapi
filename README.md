@@ -132,6 +132,14 @@ service cloud.firestore {
                     request.auth.token.role == 'main' && 
                     resource.data.mainUserId == request.auth.token.mainUserId;
     }
+
+    // Resources type
+    match /resourcesTypes/{typeId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null && request.auth.uid == userId;
+        allow delete: if request.auth != null && request.auth.uid == userId
+                      && resource.data.isDefault == false;
+      }
   }
 }
 ```
@@ -141,6 +149,23 @@ service cloud.firestore {
 FIREBASE_CREDENTIALS_PATH=/secrets/nomeKeyFirebaseAqui.json
 FIREBASE_DATABASE_URL=url firebase aqui
 WEB_API_KEY=chave api aqui
+ADMIN_API_KEY=chave admin api aqui
+
+#### ADMIN_API_KEY
+
+Criar um admin api key usando um uuid randomico ou um string dificil como:
+
+Ex: 
+import uuid
+print(uuid.uuid4())
+
+ADMIN_API_KEY=123e4567-e89b-12d3-a456-426614174000
+
+poderia ser um string como 32–64 characters:
+
+ADMIN_API_KEY=fk459fkdsjfPlan_dsa97fjfd_EasyanaApp
+
+No docker-compose.yml carrega  .env e carrega essa chave 
 
 
 ### Endpoints

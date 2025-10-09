@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Optional
 from enum import IntEnum
+
 class DurationType(IntEnum):
     min = 0
     hours = 1
@@ -28,3 +29,4 @@ class ResourceCreate(BaseModel):
 
 class PhaseUpdateResource(BaseModel):
     resourceId: str
+
