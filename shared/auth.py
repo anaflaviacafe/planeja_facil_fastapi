@@ -13,8 +13,8 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     try:
         logger.info("Verifying token")
         # decoded_token = fb_auth.verify_id_token(credentials.credentials, check_revoked=True)
-        # Explicitly set clock skew to 10 minutes (600 seconds)
-        decoded_token = fb_auth.verify_id_token(credentials.credentials, clock_skew_seconds=600, check_revoked=True)
+        # Explicitly set clock skew to 1 min (60 seconds)
+        decoded_token = fb_auth.verify_id_token(credentials.credentials, clock_skew_seconds=60, check_revoked=True)
         logger.info(f"Token decoded: {decoded_token}")
         user_id = decoded_token['uid']
         role = decoded_token.get('role', 'child')

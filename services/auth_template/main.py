@@ -11,26 +11,9 @@ from models import*
 from shared.auth import get_current_user, require_main_role
 from shared.config import logger
 
-
-# Load environment variables from .env file for configuration (e.g., WEB_API_KEY for Firebase)
 load_dotenv()  
 
 app = FastAPI()
-
-# Configure HTTPBearer security scheme for JWT token authentication
-security = HTTPBearer()  # tokens JWT
-
-
-# listing all users
-# @app.get("/users")
-# async def get_users():
-#     # Fetch all documents from the 'users' collection in Firestore
-#     users_ref = db.collection("users").get()
-#     # Convert Firestore documents to a list of dictionaries
-#     users = [user.to_dict() for user in users_ref]
-#     # Return the list of users
-#     return {"users": users}
-
 
 """ Admin Endpoints """
 
@@ -325,8 +308,7 @@ async def refresh_token(request: RefreshTokenRequest):
         if not web_api_key:
             raise HTTPException(status_code=500, detail="WEB_API_KEY não encontrada no .env")
         
-        #TODO comment
-        print(f"Renovando token com WEB_API_KEY: {web_api_key[:6]}...")
+        logger.debug(f"Renovando token com WEB_API_KEY: {web_api_key[:6]}...")
        
         new_tokens = refresh_user_token(request.refresh_token, web_api_key)
     
@@ -368,7 +350,7 @@ async def get_user_role(current_user: dict = Depends(get_current_user)):
         logger.info(f"Resposta do user-role: {response}")
         return response
     except HTTPException as e:
-        # Re-raise HTTP exceptions (e.g., 404) #TODO
+        #  HTTP 404 #TODO
         raise e
     except Exception as e:
         logger.error(f"Erro ao obter papel do usuário {user_id}: {str(e)}")

@@ -16,9 +16,6 @@ fb_auth = auth
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-
-
 # Run this locally to delete a user and all their data
 
 def delete_user_and_data(user_id: str):
