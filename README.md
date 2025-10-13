@@ -86,7 +86,7 @@ service cloud.firestore {
     match /templates/{templateId} {
       allow read, write: if request.auth != null && 
                           request.auth.token.role == 'main' && 
-                          resource.data.mainUserId == request.auth.token.mainUserId;
+                          resource.data.mainUserId == userId;
     }
 
     // Users: Each user can read/write their own data
@@ -172,37 +172,7 @@ No docker-compose.yml carrega  .env e carrega essa chave
 
  - service app http://localhost:8000  
  - service users http://localhost:8001/users
-
-
-### Conteiner sync time
-
-Only do this if error TIMESTAMP not fix in login  
-
 ```
-sudo apt-get install -y ntp
-sudo systemctl enable ntp
-sudo systemctl start ntp
-
-#sync :
-sudo ntpdate pool.ntp.org
-verify:
-ntpdate -q pool.ntp.org
-```
-
-Add NTP to your Dockerfile for planeja_facil_auth_template:
-```
-RUN apt-get update && apt-get install -y ntp && ntpd -gq
-```
-```
-services:
-  planeja_facil_auth_template:
-    image: your_image
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-```
-
-
 ### Imagem Docker
 
  As imagens Docker são criadas a partir dos Dockerfiles e do docker-compose.yaml
