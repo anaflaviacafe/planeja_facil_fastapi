@@ -420,7 +420,7 @@ async def delete_main_user(user_id: str, current_user: dict = Depends(require_ma
 
 """ Resources Types """
 
-# Add a new resource type
+# create resource type
 @app.post("/resources-types")
 async def add_resource_type(resource_type: ResourceTypeCreate, current_user: dict = Depends(require_main_role)):
     try:
@@ -477,7 +477,7 @@ async def delete_resource_type(type_id: str, current_user: dict = Depends(requir
         logger.error(f"Error deleting resource type: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     
-# Read resource types
+# get resource types
 @app.get("/resources-types")
 async def get_resource_types(current_user: dict = Depends(require_main_role)):
     try:

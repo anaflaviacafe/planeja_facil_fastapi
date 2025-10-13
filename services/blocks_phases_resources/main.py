@@ -22,7 +22,9 @@ def validate_template(template_id: str, main_user_id: str) -> None:
     Raises:
         HTTPException: If the template doesn't exist (404) or doesn't belong to the main user (403).
     """
-    template_ref = db.collection('templates').document(template_id)
+    #template_ref = db.collection('templates').document(template_id)
+    template_ref = (db.collection('users').document(main_user_id).collection('templates').document(template_id))
+
     template_doc = template_ref.get()
     if not template_doc.exists:
         logger.error(f"Template {template_id} not found")
@@ -62,7 +64,11 @@ async def create_block(block: BlockCreate, current_user: dict = Depends(require_
             "createdAt": firestore.SERVER_TIMESTAMP
         }
         
-        doc_ref = db.collection("blocks").add(block_data)
+        #doc_ref = db.collection("blocks").add(block_data)
+
+        block_ref = db.collection("users").document(main_user_id).collection("blocks")
+        doc_ref = block_ref.add(block_data)
+
         block_id = doc_ref[1].id
         logger.info(f"Block created: {block_id}")
         return {"message": "Block created", "id": block_id}
@@ -91,15 +97,20 @@ async def get_blocks(current_user: dict = Depends(get_current_user)):
 
         logger.info(f"Listing blocks for mainUserId: {main_user_id}, template: {selected_template}")
       
-        blocks_ref = db.collection('blocks').where(
+        # blocks_ref = db.collection('blocks').where(
+        #     filter=FieldFilter('mainUserId', '==', main_user_id)
+        # ).where(
+        #     filter=FieldFilter('templateId', '==', selected_template)  
+        # )
+        # blocks inside users      
+        blocks_ref = db.collection('users').document(main_user_id).collection("blocks").where(
             filter=FieldFilter('mainUserId', '==', main_user_id)
         ).where(
             filter=FieldFilter('templateId', '==', selected_template)  
         )
-        
-        #blocks = blocks_ref.get()
-        #blocks_list = [{"id": block.id, **block.to_dict()} for block in blocks]
 
+        #blocks = [doc.to_dict() | {"id": doc.id} for doc in blocks_ref]
+        #or
         blocks = blocks_ref.get()
         blocks_list = []
         for block in blocks:
@@ -119,7 +130,8 @@ async def update_block(block_id: str, block: BlockCreate, current_user: dict = D
     main_user_id = current_user['mainUserId']
 
     # Reference the block document in Firestore
-    block_ref = db.collection("blocks").document(block_id)
+    #block_ref = db.collection("blocks").document(block_id)
+    block_ref = db.collection('users').document(main_user_id).collection("blocks").document(block_id)
     block_doc = block_ref.get()
 
     # Check block exists and belongs to the main user
@@ -144,11 +156,12 @@ async def update_block(block_id: str, block: BlockCreate, current_user: dict = D
 # delete a block
 @app.delete("/blocks/{block_id}")
 async def delete_block(block_id: str, current_user: dict = Depends(require_main_role)):
-    main_user_id = current_user['mainUserId']
-    try:
-        
-       # Reference the block document
-        block_ref = db.collection("blocks").document(block_id)
+    try:        
+        main_user_id = current_user['mainUserId']
+
+        # Reference the block document
+        # block_ref = db.collection("blocks").document(block_id)
+        block_ref = db.collection('users').document(main_user_id).collection("blocks").document(block_id)
         block_doc = block_ref.get()
 
         if not block_doc.exists:
@@ -284,7 +297,10 @@ async def create_resource(resource: ResourceCreate, current_user: dict = Depends
             "createdAt": firestore.SERVER_TIMESTAMP
         }
         
-        doc_ref = db.collection("resources").add(resource_data)
+        #doc_ref = db.collection("resources").add(resource_data)
+        # add in users: /users/{mainUserId}/resources
+        resources_ref = db.collection("users").document(main_user_id).collection("resources")
+        doc_ref = resources_ref.add(resource_data)
         resource_id = doc_ref[1].id
        
         logger.info(f"Resource created: {resource_id}")
