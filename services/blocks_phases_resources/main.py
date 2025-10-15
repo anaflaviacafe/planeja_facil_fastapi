@@ -60,7 +60,7 @@ async def create_block(block: BlockCreate, current_user: dict = Depends(require_
             "description": block.description,
             "mainUserId": main_user_id,
             "templateId": block.templateId,
-            "durationType": duration_types[block.durationType],  # Convert int to string
+            "durationType": int(block.durationType),
             "createdAt": firestore.SERVER_TIMESTAMP
         }
         
@@ -117,6 +117,7 @@ async def get_blocks(current_user: dict = Depends(get_current_user)):
             block_data = block.to_dict()
             block_data['id'] = block.id
             blocks_list.append(block_data)
+            #logger.info(f"Blocks {block_data}") 
         
         logger.info(f"Blocks found: {len(blocks_list)}")
         return {"blocks": blocks_list}
@@ -140,9 +141,10 @@ async def update_block(block_id: str, block: BlockCreate, current_user: dict = D
     try:
    
         # id keep the same  
-        # block_data = block.dict(exclude={"id", "block_id"})    
-        block_data = block.dict(exclude_unset=True)  # Exclude unset fields to avoid overwriting with null, also excluds id
-        #logger.info(f"Dados recebidos para atualização: {block.dict()}") 
+        block_data = block.dict(exclude={"id", "block_id"})    
+        block_data["durationType"] = int(block.durationType)
+        # block_data = block.dict(exclude_unset=True)  # Exclude unset fields to avoid overwriting with null, also excluds id
+        logger.info(f"Dados recebidos para atualização: {block.dict()}") 
         block_data["updatedAt"] = firestore.SERVER_TIMESTAMP
              
         # Update block document in Firestore
