@@ -322,7 +322,44 @@ async def create_resource(resource: ResourceCreate, current_user: dict = Depends
         logger.error(f"Error creating resource: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     
-
+# Delete a phase from block (main users only)
+@app.delete("/blocks/{block_id}/phases/{phase_id}")
+async def delete_phase(block_id: str, phase_id: str, current_user: dict = Depends(require_main_role)):
+    try:
+        main_user_id = current_user['mainUserId']
+        logger.info(f"Request delete phase: block_id='{block_id}', phase_id='{phase_id}', user_id='{main_user_id}'")
+        
+        # Check if block exists and belongs to mainUserId
+        block_ref = db.collection('users').document(main_user_id).collection("blocks").document(block_id)
+        block_doc = block_ref.get()
+        
+        if not block_doc.exists:
+            logger.error(f"Block '{block_id}' not found")
+            raise HTTPException(status_code=404, detail="Block not found")
+        if block_doc.to_dict().get('mainUserId') != main_user_id:
+            logger.error(f"Block {block_id} does not belong to mainUserId {main_user_id}")
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Check if phase exists
+        phase_ref = block_ref.collection('phases').document(phase_id)
+        phase_doc = phase_ref.get()
+        
+        if not phase_doc.exists:
+            logger.error(f"Phase '{phase_id}' not found in block '{block_id}'")
+            raise HTTPException(status_code=404, detail="Phase not found")
+        
+        # Delete phase
+        phase_ref.delete()
+        
+        logger.info(f"✅ Phase '{phase_id}' deleted from block '{block_id}'")
+        return {"message": "Phase deleted successfully", "id": phase_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting phase: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    
 # List resources (main and child users)
 @app.get("/resources")
 async def get_resources(current_user: dict = Depends(get_current_user)):
