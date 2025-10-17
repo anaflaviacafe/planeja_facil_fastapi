@@ -209,3 +209,13 @@ Verificar logs:
 ```
 docker-compose logs users_service
 ```
+
+Sync timer ALL containers
+```
+docker-compose exec auth_template sh -c "apt-get update -qq && apt-get install -y ntpdate && ntpdate -s time.nist.gov && date +%s"
+```
+Com o conteiner rodando da pra ver que ta com erro na hora atual:
+
+D:\USP\TCC\planeja_facil_fastapi>docker exec -it planeja_facil_auth_template date
+Fri Oct 17 17:42:37 UTC 2025    
+UTC do conteiner é 3h a mais exatas

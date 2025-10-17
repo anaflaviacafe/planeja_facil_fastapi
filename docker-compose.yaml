@@ -1,4 +1,3 @@
-
 services:
   app:
     build: .
@@ -6,14 +5,14 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app  # mount current '.' directory to /app in the conteiner
-                # app main application code, API fastAPI running with uvicorn
-      - ./secrets:/secrets:ro  # Read-only mount for secrets (add if app needs Firebase)
-      
+      - .:/app
+        # mount current '.' directory to /app in the conteiner
+        # app main application code, API fastAPI running with uvicorn
+      - ./secrets:/secrets:ro # Read-only mount for secrets (add if app needs Firebase)
+
     env_file:
       - .env
-    command: uvicorn main:app --host 0.0.0.0 --port 8000  #to allow external access
-
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 #to allow external access
 
   auth_template:
     build:
@@ -24,8 +23,10 @@ services:
       - "8001:8001"
     volumes:
       - ./services/auth_template:/app
-      - ./shared:/app/shared   # shared config to firebase, to be accessed by microservice users
-      - ./secrets:/secrets:ro  # Mount secrets of host in /secrets in conteiner
+      - ./shared:/app/shared # shared config to firebase, to be accessed by microservice users
+      - ./secrets:/secrets:ro # Mount secrets of host in /secrets in conteiner
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     env_file:
       - .env
     command: uvicorn main:app --host 0.0.0.0 --port 8001
@@ -59,4 +60,3 @@ services:
     env_file:
       - .env
     command: uvicorn main:app --host 0.0.0.0 --port 8003
-
