@@ -211,16 +211,23 @@ async def delete_block(block_id: str, current_user: dict = Depends(require_main_
 async def create_phase(block_id: str, phase: PhaseCreate, current_user: dict = Depends(require_main_role)):
     try:
         main_user_id = current_user['mainUserId']
+        logger.info(f"Request create phase, block_id: '{block_id}', user_id: '{main_user_id}'")
        
         # Check if block exists and belongs to mainUserId
-        block_ref = db.collection('blocks').document(block_id)
+        block_ref = db.collection('users').document(main_user_id).collection("blocks").document(block_id)
         block_doc = block_ref.get()
+        #logger.info(f"block_doc exists: {block_doc.exists}")
+        
+        if block_doc.exists:
+            block_data = block_doc.to_dict()
+            logger.info(f"Block data: {block_data}")
+        
         if not block_doc.exists:
-            logger.error(f"Block {block_id} not found")
+            logger.error(f"Block '{block_id}' not found")
             raise HTTPException(status_code=404, detail="Block not found")
         if block_doc.to_dict().get('mainUserId') != main_user_id:
             logger.error(f"Block {block_id} does not belong to mainUserId {main_user_id}")
-            raise HTTPException(status_code=403, detail="Access denied")
+            raise HTTPException(status_code=403, detail="Access denied")            
 
         phase_data = {
             "name": phase.name,
@@ -246,8 +253,9 @@ async def get_phases(block_id: str, current_user: dict = Depends(get_current_use
         main_user_id = current_user['mainUserId']
         logger.info(f"Fetching phases for block {block_id}, mainUserId: {main_user_id}")
         
-        block_ref = db.collection("blocks").document(block_id)
+        block_ref = db.collection('users').document(main_user_id).collection("blocks").document(block_id)
         block_doc = block_ref.get()
+        
         if not block_doc.exists:
             logger.error(f"Block {block_id} not found")
             raise HTTPException(status_code=404, detail="Block not found")
@@ -277,7 +285,7 @@ async def get_phases(block_id: str, current_user: dict = Depends(get_current_use
     except Exception as e:
         logger.error(f"Error listing phases: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
-
+    
 # create resource
 @app.post("/resources")
 async def create_resource(resource: ResourceCreate, current_user: dict = Depends(require_main_role)):
