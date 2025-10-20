@@ -76,6 +76,43 @@ async def create_block(block: BlockCreate, current_user: dict = Depends(require_
         logger.error(f"Error creating block: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
+# list full block
+@app.get("/blocks/full")
+async def get_blocks_full(current_user: dict = Depends(get_current_user)):
+    try:
+        main_user_id = current_user['mainUserId']
+        blocks_ref = db.collection('users').document(main_user_id).collection("blocks").get()
+        blocks = []
+        
+        for block_doc in blocks_ref:
+            block_data = block_doc.to_dict()
+            block_data["id"] = block_doc.id
+            
+            # all phases + resources
+            phases_ref = block_doc.reference.collection("phases").get()
+            phases = []
+            for phase_doc in phases_ref:
+                phase_data = phase_doc.to_dict()
+                phase_data["id"] = phase_doc.id
+                
+                if phase_data.get("resources") and len(phase_data["resources"]) > 0:
+                    resource_id = phase_data["resources"][0]  
+                    resource_doc = db.collection('users').document(main_user_id).collection("resources").document(resource_id).get()
+                    if resource_doc.exists:
+                        resource_data = resource_doc.to_dict()
+                        resource_data["id"] = resource_id
+                        phase_data["resource"] = resource_data 
+                
+                phases.append(phase_data)
+            
+            block_data["phases"] = phases
+            blocks.append(block_data)
+        
+        return {"blocks": blocks}
+    except Exception as e:
+        logger.error(f"Error listing full blocks: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    
 # List blocks
 @app.get("/blocks")
 async def get_blocks(current_user: dict = Depends(get_current_user)):
@@ -269,11 +306,10 @@ async def get_phases(block_id: str, current_user: dict = Depends(get_current_use
             phase_data = doc.to_dict()
             phase_data["id"] = doc.id
 
-            # Fetch resource data for the resources list
             if phase_data.get("resources"):  
                 phase_data["resource_details"] = []
                 for resource_id in phase_data["resources"]:
-                    resource_doc = db.collection("resources").document(resource_id).get()
+                    resource_doc = db.collection('users').document(main_user_id).collection("resources").document(resource_id).get()
                     if resource_doc.exists:
                         resource_data = resource_doc.to_dict()
                         resource_data["id"] = resource_id
@@ -513,4 +549,164 @@ async def add_resource_to_phase(block_id: str, phase_id: str, resource: PhaseUpd
         return {"message": f"Resource {resource.resourceId} associated with phase {phase_id}"}
     except Exception as e:
         logger.error(f"Error associating resource with phase: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    
+
+# Assign resource to phase (main users only)
+@app.post("/blocks/{block_id}/phases/{phase_id}/assign-resource")
+async def assign_resource_to_phase(
+    block_id: str, 
+    phase_id: str, 
+    assign_data: PhaseUpdateResource,
+    current_user: dict = Depends(require_main_role)
+):
+    try:
+        main_user_id = current_user['mainUserId']
+        resource_id = assign_data.resourceId  # ← ADICIONE ESTA LINHA
+        logger.info(f"Request assign resource: block_id='{block_id}', phase_id='{phase_id}', resource_id='{resource_id}', user_id='{main_user_id}'")  
+       
+        # Check if block exists and belongs to mainUserId
+        block_ref = db.collection('users').document(main_user_id).collection("blocks").document(block_id)
+        block_doc = block_ref.get()
+        
+        if not block_doc.exists:
+            logger.error(f"Block '{block_id}' not found")
+            raise HTTPException(status_code=404, detail="Block not found")
+        
+        if block_doc.to_dict().get('mainUserId') != main_user_id:
+            logger.error(f"Block {block_id} does not belong to mainUserId {main_user_id}")
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        #  Check if phase exists
+        phase_ref = block_ref.collection('phases').document(phase_id)
+        phase_doc = phase_ref.get()
+        
+        if not phase_doc.exists:
+            logger.error(f"Phase '{phase_id}' not found in block '{block_id}'")
+            raise HTTPException(status_code=404, detail="Phase not found")
+        
+        resource_ref = db.collection('users').document(main_user_id).collection("resources").document(resource_id)
+        resource_doc = resource_ref.get()
+        
+        if not resource_doc.exists:
+            logger.error(f"Resource '{resource_id}' not found")
+            raise HTTPException(status_code=404, detail="Resource not found")
+        
+        if resource_doc.to_dict().get('mainUserId') != main_user_id:
+            logger.error(f"Resource {resource_id} does not belong to mainUserId {main_user_id}")
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        phase_data = phase_doc.to_dict()
+        
+        resources = phase_data.get('resources', [])
+        
+        # Check if resource is already assigned
+        if resource_id in resources:
+            logger.warning(f"Resource '{resource_id}' already assigned to phase '{phase_id}'")
+            return {"message": "Resource already assigned", "phase_id": phase_id}
+        
+        resources.append(resource_id)
+        phase_update_data = {
+            'resources': resources,
+            'updatedAt': firestore.SERVER_TIMESTAMP
+        }
+        
+        phase_ref.update(phase_update_data)
+        
+        logger.info(f"Resource '{resource_id}' assigned to phase '{phase_id}' in block '{block_id}'")
+        return {
+            "message": "Resource assigned successfully", 
+            "phase_id": phase_id,
+            "resource_id": resource_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error assigning resource to phase: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))    
+    
+
+# Update phase (main users only)
+@app.put("/blocks/{block_id}/phases/{phase_id}")
+async def update_phase(
+    block_id: str, 
+    phase_id: str, 
+    phase: PhaseCreate,  
+    current_user: dict = Depends(require_main_role)
+):
+    try:
+        main_user_id = current_user['mainUserId']
+        logger.info(f"Request update phase: block_id='{block_id}', phase_id='{phase_id}', user_id='{main_user_id}'")
+        
+        #  Check block
+        block_ref = db.collection('users').document(main_user_id).collection("blocks").document(block_id)
+        block_doc = block_ref.get()
+        if not block_doc.exists or block_doc.to_dict().get('mainUserId') != main_user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Check phase exists
+        phase_ref = block_ref.collection('phases').document(phase_id)
+        phase_doc = phase_ref.get()
+        if not phase_doc.exists:
+            raise HTTPException(status_code=404, detail="Phase not found")
+        
+        # Update phase
+        phase_update_data = {
+            "name": phase.name,
+            "description": phase.description,
+            "duration": phase.duration,
+            "updatedAt": firestore.SERVER_TIMESTAMP
+        }
+        phase_ref.update(phase_update_data)
+        
+        logger.info(f"Phase '{phase_id}' updated in block '{block_id}'")
+        return {"message": "Phase updated", "id": phase_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating phase: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# Update phase SINGLE resource (main users only)
+@app.put("/blocks/{block_id}/phases/{phase_id}/resource")
+async def update_phase_resource(
+    block_id: str, 
+    phase_id: str, 
+    resource_id: str,  
+    current_user: dict = Depends(require_main_role)
+):
+    try:
+        main_user_id = current_user['mainUserId']
+        logger.info(f"Request update phase resource: block_id='{block_id}', phase_id='{phase_id}', resource_id='{resource_id}'")
+        
+        block_ref = db.collection('users').document(main_user_id).collection("blocks").document(block_id)
+        block_doc = block_ref.get()
+        if not block_doc.exists or block_doc.to_dict().get('mainUserId') != main_user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        phase_ref = block_ref.collection('phases').document(phase_id)
+        phase_doc = phase_ref.get()
+        if not phase_doc.exists:
+            raise HTTPException(status_code=404, detail="Phase not found")
+        
+        resource_ref = db.collection('users').document(main_user_id).collection("resources").document(resource_id)
+        if not resource_ref.get().exists:
+            raise HTTPException(status_code=404, detail="Resource not found")
+        
+        # Update
+        phase_ref.update({
+            'resources': [resource_id], 
+            'updatedAt': firestore.SERVER_TIMESTAMP
+        })
+        
+        logger.info(f"Phase '{phase_id}' resource updated to '{resource_id}'")
+        return {"message": "Resource updated", "phase_id": phase_id, "resource_id": resource_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating phase resource: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
