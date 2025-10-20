@@ -555,78 +555,46 @@ async def add_resource_to_phase(block_id: str, phase_id: str, resource: PhaseUpd
 # Assign resource to phase (main users only)
 @app.post("/blocks/{block_id}/phases/{phase_id}/assign-resource")
 async def assign_resource_to_phase(
-    block_id: str, 
-    phase_id: str, 
-    assign_data: PhaseUpdateResource,
+    block_id: str,
+    phase_id: str,
+    resource_id: str,
     current_user: dict = Depends(require_main_role)
 ):
     try:
         main_user_id = current_user['mainUserId']
-        resource_id = assign_data.resourceId  # ← ADICIONE ESTA LINHA
-        logger.info(f"Request assign resource: block_id='{block_id}', phase_id='{phase_id}', resource_id='{resource_id}', user_id='{main_user_id}'")  
-       
-        # Check if block exists and belongs to mainUserId
+        logger.info(f"Assign resource '{resource_id}' to phase '{phase_id}' in block '{block_id}'")
+        
+        # Validações (igual antes)
         block_ref = db.collection('users').document(main_user_id).collection("blocks").document(block_id)
         block_doc = block_ref.get()
-        
-        if not block_doc.exists:
-            logger.error(f"Block '{block_id}' not found")
-            raise HTTPException(status_code=404, detail="Block not found")
-        
-        if block_doc.to_dict().get('mainUserId') != main_user_id:
-            logger.error(f"Block {block_id} does not belong to mainUserId {main_user_id}")
+        if not block_doc.exists or block_doc.to_dict().get('mainUserId') != main_user_id:
             raise HTTPException(status_code=403, detail="Access denied")
         
-        #  Check if phase exists
         phase_ref = block_ref.collection('phases').document(phase_id)
         phase_doc = phase_ref.get()
-        
         if not phase_doc.exists:
-            logger.error(f"Phase '{phase_id}' not found in block '{block_id}'")
             raise HTTPException(status_code=404, detail="Phase not found")
         
         resource_ref = db.collection('users').document(main_user_id).collection("resources").document(resource_id)
-        resource_doc = resource_ref.get()
-        
-        if not resource_doc.exists:
-            logger.error(f"Resource '{resource_id}' not found")
+        if not resource_ref.get().exists:
             raise HTTPException(status_code=404, detail="Resource not found")
         
-        if resource_doc.to_dict().get('mainUserId') != main_user_id:
-            logger.error(f"Resource {resource_id} does not belong to mainUserId {main_user_id}")
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        phase_data = phase_doc.to_dict()
-        
-        resources = phase_data.get('resources', [])
-        
-        # Check if resource is already assigned
-        if resource_id in resources:
-            logger.warning(f"Resource '{resource_id}' already assigned to phase '{phase_id}'")
-            return {"message": "Resource already assigned", "phase_id": phase_id}
-        
-        resources.append(resource_id)
-        phase_update_data = {
-            'resources': resources,
+        # write/re-write id
+        phase_ref.update({
+            'resources': [resource_id],  
             'updatedAt': firestore.SERVER_TIMESTAMP
-        }
+        })
         
-        phase_ref.update(phase_update_data)
         
-        logger.info(f"Resource '{resource_id}' assigned to phase '{phase_id}' in block '{block_id}'")
-        return {
-            "message": "Resource assigned successfully", 
-            "phase_id": phase_id,
-            "resource_id": resource_id
-        }
+        logger.info(f"Phase '{phase_id}' resource ASSIGNED to '{resource_id}' (overwritten)")
+        return {"message": "Resource assigned", "phase_id": phase_id, "resource_id": resource_id}
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error assigning resource to phase: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))    
+        logger.error(f"Error assigning resource: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     
-
 # Update phase (main users only)
 @app.put("/blocks/{block_id}/phases/{phase_id}")
 async def update_phase(
@@ -669,44 +637,3 @@ async def update_phase(
         logger.error(f"Error updating phase: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-
-# Update phase SINGLE resource (main users only)
-@app.put("/blocks/{block_id}/phases/{phase_id}/resource")
-async def update_phase_resource(
-    block_id: str, 
-    phase_id: str, 
-    resource_id: str,  
-    current_user: dict = Depends(require_main_role)
-):
-    try:
-        main_user_id = current_user['mainUserId']
-        logger.info(f"Request update phase resource: block_id='{block_id}', phase_id='{phase_id}', resource_id='{resource_id}'")
-        
-        block_ref = db.collection('users').document(main_user_id).collection("blocks").document(block_id)
-        block_doc = block_ref.get()
-        if not block_doc.exists or block_doc.to_dict().get('mainUserId') != main_user_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        phase_ref = block_ref.collection('phases').document(phase_id)
-        phase_doc = phase_ref.get()
-        if not phase_doc.exists:
-            raise HTTPException(status_code=404, detail="Phase not found")
-        
-        resource_ref = db.collection('users').document(main_user_id).collection("resources").document(resource_id)
-        if not resource_ref.get().exists:
-            raise HTTPException(status_code=404, detail="Resource not found")
-        
-        # Update
-        phase_ref.update({
-            'resources': [resource_id], 
-            'updatedAt': firestore.SERVER_TIMESTAMP
-        })
-        
-        logger.info(f"Phase '{phase_id}' resource updated to '{resource_id}'")
-        return {"message": "Resource updated", "phase_id": phase_id, "resource_id": resource_id}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating phase resource: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
