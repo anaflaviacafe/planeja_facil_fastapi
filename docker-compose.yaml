@@ -31,15 +31,15 @@ services:
       - .env
     command: uvicorn main:app --host 0.0.0.0 --port 8001
 
-  blocks_phases_resources:
+  full_block:
     build:
       context: .
-      dockerfile: services/blocks_phases_resources/Dockerfile
-    container_name: planeja_facil_blocks_phases
+      dockerfile: services/full_block/Dockerfile
+    container_name: full_block
     ports:
       - "8002:8002"
     volumes:
-      - ./services/blocks_phases_resources:/app
+      - ./services/full_block:/app
       - ./shared:/app/shared
       - ./secrets:/secrets:ro
     env_file:

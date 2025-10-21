@@ -1,6 +1,6 @@
 FROM python:3.13
 WORKDIR /app
-COPY ./services/blocks_phases_resources /app
+COPY ./services/full_block /app
 COPY requirements.txt /app
 COPY shared/config.py /app/shared/config.py
 RUN pip install --no-cache-dir -r requirements.txt

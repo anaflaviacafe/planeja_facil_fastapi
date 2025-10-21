@@ -27,7 +27,7 @@ D:\USP\TCC\planeja_facil_fastapi\
 │   ├── auth_template/                # Serviço de usuário + template (porta 8001)
 │   │   ├── main.py                   # Rotas de login, usuários, templates
 │   │   └── Dockerfile
-│   ├── blocks_phases_resources/      # Serviço de cadastro de blocos/fases/recursos (porta 8002)
+│   ├── full_block/      # Serviço de cadastro de blocos/fases/recursos (porta 8002)
 │   │   ├── main.py                   # Rotas para CRUD de blocos, fases, recursos
 │   │   └── Dockerfile
 │   └── production_orders/            # Serviço de ordens de produção + apontamentos (porta 8003)
