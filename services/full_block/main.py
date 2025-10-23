@@ -12,11 +12,13 @@ from utils import validate_template
 from blocks import blocks_router
 from phases import phases_router
 from resources import resources_router
+from ops import op_router
 
 app = FastAPI()
 
 app.include_router(blocks_router)
 app.include_router(phases_router)
 app.include_router(resources_router)
+app.include_router(op_router)
 
     
