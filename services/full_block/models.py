@@ -70,3 +70,6 @@ class OpModel(BaseModel):
     resource: Optional[ResourceCreate] = None
     customColumn: Optional[str] = ""
     operatorName: Optional[str] = None
+
+    class Config:
+        orm_mode = True # Ensure this is imported or defined in models.py
