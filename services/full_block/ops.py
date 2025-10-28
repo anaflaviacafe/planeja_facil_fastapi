@@ -115,25 +115,25 @@ async def list_ops(current_user: dict = Depends(require_main_role)):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # Get one op
-@op_router.get("/op/{op_id}", response_model=OpModel)
-async def get_op(op_id: str, current_user: dict = Depends(require_main_role)):
-    try:
-        main_user_id = current_user['mainUserId']
+# @op_router.get("/op/{op_id}", response_model=OpModel)
+# async def get_op(op_id: str, current_user: dict = Depends(require_main_role)):
+#     try:
+#         main_user_id = current_user['mainUserId']
         
-        op_ref = db.collection("users").document(main_user_id).collection("ops").document(op_id)
-        op_doc = op_ref.get()
+#         op_ref = db.collection("users").document(main_user_id).collection("ops").document(op_id)
+#         op_doc = op_ref.get()
         
-        if not op_doc.exists:
-            logger.error(f"Op {op_id} not found for user {main_user_id}")
-            raise HTTPException(status_code=404, detail="Op not found")
+#         if not op_doc.exists:
+#             logger.error(f"Op {op_id} not found for user {main_user_id}")
+#             raise HTTPException(status_code=404, detail="Op not found")
         
-        op_data = op_doc.to_dict()
-        op_data['id'] = op_id
-        logger.info(f"Retrieved op {op_id} for user {main_user_id}")
-        return OpModel(**op_data)
-    except Exception as e:
-        logger.error(f"Error retrieving op {op_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+#         op_data = op_doc.to_dict()
+#         op_data['id'] = op_id
+#         logger.info(f"Retrieved op {op_id} for user {main_user_id}")
+#         return OpModel(**op_data)
+#     except Exception as e:
+#         logger.error(f"Error retrieving op {op_id}: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # Delete op
 @op_router.delete("/op/{op_id}")
@@ -154,3 +154,30 @@ async def delete_op(op_id: str, current_user: dict = Depends(require_main_role))
     except Exception as e:
         logger.error(f"Error deleting op {op_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+# update op
+@op_router.put("/ops/{op_id}")
+async def update_op(op_id: str, op: OpModel, current_user: dict = Depends(require_main_role)):
+    main_user_id = current_user['mainUserId']
+        
+    op_ref = db.collection("users").document(main_user_id).collection("ops").document(op_id)
+    op_doc = op_ref.get()
+    
+    if not op_doc.exists:
+        logger.error(f"Op {op_id} not found for user {main_user_id}")
+        raise HTTPException(status_code=404, detail="Op not found")
+
+    try:   
+        # Exclude unset fields to avoid overwriting with null, also excluds id
+        op_data = op.dict(exclude_unset=True, exclude={"id", "op_id"})        
+        # logger.info(f"Updating op {op_id} with fields: {list(op_data.keys())}")
+        # logger.info(f"op data received: {op.dict()}") 
+        op_data["updatedAt"] = firestore.SERVER_TIMESTAMP
+             
+        # Update op document in Firestore
+        op_ref.update(op_data)
+       
+        return {"id": op_id, "message": "Op updated", "code": op_data["code"]}
+    except Exception as e:
+        logger.error(f"Error on update op: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))

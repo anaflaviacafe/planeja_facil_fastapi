@@ -26,18 +26,21 @@ class PauseType(IntEnum):
     other = 4
 
 class BlockCreate(BaseModel):
+    id: Optional[str] = None
     name: str
     description: str
     durationType: DurationType
     templateId: str
 
 class PhaseCreate(BaseModel):
+    id: Optional[str] = None
     name: str
     description: str
     duration: float
     templateId: Optional[str] = None
 
 class ResourceCreate(BaseModel):
+    id: Optional[str] = None
     name: str
     description: str
     code: Optional[str] = None

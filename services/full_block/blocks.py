@@ -159,7 +159,7 @@ async def update_block(block_id: str, block: BlockCreate, current_user: dict = D
         block_data = block.dict(exclude={"id", "block_id"})    
         block_data["durationType"] = int(block.durationType)
         # block_data = block.dict(exclude_unset=True)  # Exclude unset fields to avoid overwriting with null, also excluds id
-        logger.info(f"Dados recebidos para atualização: {block.dict()}") 
+        logger.info(f"block data received: {block.dict()}") 
         block_data["updatedAt"] = firestore.SERVER_TIMESTAMP
              
         # Update block document in Firestore
@@ -167,7 +167,7 @@ async def update_block(block_id: str, block: BlockCreate, current_user: dict = D
        
         return {"id": block_id, "message": "Bloco atualizado", "name": block_data["name"]}
     except Exception as e:
-        logger.error(f"Erro ao atualizar bloco: {str(e)}")
+        logger.error(f"Error on update block: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
        
 # delete a block
@@ -183,7 +183,7 @@ async def delete_block(block_id: str, current_user: dict = Depends(require_main_
 
         if not block_doc.exists:
             logger.error(f"Block {block_id} not found for main user {main_user_id}")
-            raise HTTPException(status_code=404, detail="Bloco não encontrado")
+            raise HTTPException(status_code=404, detail="Block not found")
 
         # get block data
         block = block_doc.to_dict()
@@ -216,7 +216,7 @@ async def delete_block(block_id: str, current_user: dict = Depends(require_main_
         # with ThreadPoolExecutor() as pool:
         #     await loop.run_in_executor(pool, batch.commit)
 
-        return {"message": "Bloco deletado com sucesso"}
+        return {"message": "Block deleted"}
     except Exception as e:
         logger.error(f"Error deleting block {block_id}: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Erro ao deletar child user: {str(e)}")

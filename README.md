@@ -4,6 +4,7 @@
 pip install fastapi uvicorn
 
 pip install google-cloud-firestore
+pip install firebase-admin google-cloud-firestore
 
 docker-compose up --build
 
