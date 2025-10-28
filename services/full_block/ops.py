@@ -105,6 +105,7 @@ async def list_ops(current_user: dict = Depends(require_main_role)):
         for op in ops:
             op_data = op.to_dict()
             op_data['id'] = op.id
+            #logger.info(f"Op {op.id} block: {op_data.get('block')}")  #
             op_list.append(op_data)
             logger.debug(f"Op found: {op_data}")  
                 
