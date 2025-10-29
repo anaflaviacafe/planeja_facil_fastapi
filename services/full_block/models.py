@@ -7,17 +7,20 @@ class DurationType(IntEnum):
     min = 0
     hours = 1
     days = 2
+
 class StatusTypeOP(IntEnum):
     create = 0
     start = 1
     paused = 2
     end = 3
+
 class PriorityType(IntEnum):
     baixa = 0
     normal = 1
     media = 2
     alta = 3
     urgente = 4
+    
 class PauseType(IntEnum):
     maintenance = 0
     resource = 1
@@ -29,8 +32,8 @@ class BlockCreate(BaseModel):
     id: Optional[str] = None
     name: str
     description: str
+    templateId: str    
     durationType: DurationType
-    templateId: str
 
 class PhaseCreate(BaseModel):
     id: Optional[str] = None
@@ -61,13 +64,13 @@ class OpModel(BaseModel):
     dateLimit: Optional[datetime] = None
     dateStart: Optional[datetime] = None
     dateEnd: Optional[datetime] = None
-    status: StatusTypeOP = StatusTypeOP.create
-    priority: PriorityType = PriorityType.normal
+    status: Optional[StatusTypeOP] = StatusTypeOP.create
+    priority: Optional[PriorityType] = PriorityType.normal
     estimatedDuration: Optional[float] = 0.0
     quantity: Optional[int] = 1
     progressPrc: Optional[int] = 0
     inProducing: Optional[bool] = False
-    active: bool = True
+    active: Optional[bool] = True
     block: Optional[BlockCreate] = None
     phase: Optional[PhaseCreate] = None
     resource: Optional[ResourceCreate] = None

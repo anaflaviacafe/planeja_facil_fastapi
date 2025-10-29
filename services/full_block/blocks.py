@@ -159,7 +159,7 @@ async def update_block(block_id: str, block: BlockCreate, current_user: dict = D
         block_data = block.dict(exclude={"id", "block_id"})    
         block_data["durationType"] = int(block.durationType)
         # block_data = block.dict(exclude_unset=True)  # Exclude unset fields to avoid overwriting with null, also excluds id
-        logger.info(f"block data received: {block.dict()}") 
+        logger.info(f"block data to update: {block.dict()}") 
         block_data["updatedAt"] = firestore.SERVER_TIMESTAMP
              
         # Update block document in Firestore
